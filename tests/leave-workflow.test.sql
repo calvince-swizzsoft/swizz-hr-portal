@@ -2,6 +2,12 @@
 begin;
 delete from public.portal_mirror_workflow_requests;
 delete from public.leave_application_mirror where erp_id not in ('30000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000002');
+insert into public.leave_application_mirror(erp_id,employee_erp_id,leave_type_erp_id,leave_type_description,
+  start_date,end_date,reason,status,status_description)
+values('90000000-0000-4000-8000-000000000001','missing-synthetic-employee',
+  '20000000-0000-4000-8000-000000000001','Annual leave',
+  '2027-01-11','2027-01-13','Unlinked queue regression row',1,'Pending')
+on conflict(erp_id) do nothing;
 do $$
 declare employee_user uuid; approver_user uuid; response jsonb; saved_id text;
   body jsonb:='{"leaveTypeId":"20000000-0000-4000-8000-000000000001","start":"2027-01-11","end":"2027-01-13","reason":"Workflow test"}';
@@ -25,6 +31,12 @@ begin
   assert (response->>'success')::boolean,response::text;
   assert (public.portal_dev_request('balances',query)#>>'{data,Balance,Reserved}')::integer=2;
   perform set_config('request.jwt.claim.sub',approver_user::text,true);
+  response:=public.portal_dev_request('processingApplications',jsonb_build_object('status',1,'pageIndex',0,'pageSize',20));
+  assert (response#>>'{data,InvalidCount}')::integer=1,response::text;
+  assert (response#>>'{data,TotalCount}')::integer=1,response::text;
+  assert (response#>>'{data,PageCollection,0,Id}')=saved_id,response::text;
+  assert (public.portal_dev_request('processingApplication',jsonb_build_object('id','90000000-0000-4000-8000-000000000001'))->>'status')::integer=404;
+  assert (public.portal_dev_request('authorizeLeave',jsonb_build_object('id','90000000-0000-4000-8000-000000000001','decision','approve'))->>'status')::integer=400;
   response:=public.portal_dev_request('processingApplication',jsonb_build_object('id',saved_id));
   assert response#>>'{data,Application,EmployeeId}'='10000000-0000-4000-8000-000000000001';
   response:=public.portal_dev_request('authorizeLeave',jsonb_build_object('id',saved_id,'decision','approve','remarks','Approved in test'));

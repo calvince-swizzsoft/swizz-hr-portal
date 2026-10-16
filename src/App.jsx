@@ -107,7 +107,7 @@ function ProcessingInbox({ api, profile }) {
   const data = queue.data;
   const pageCollection = Array.isArray(data?.PageCollection) ? data.PageCollection : [];
   const applications = pageCollection.filter(item => item && typeof item === 'object' && item.Id);
-  const invalidApplicationCount = pageCollection.length - applications.length;
+  const invalidApplicationCount = pageCollection.length - applications.length + (Number(data?.InvalidCount) || 0);
   return <Card title="Leave approval inbox" action={<div className="row-actions"><button className={status === 1 ? 'primary' : ''} onClick={() => showQueue(1)}>Pending</button><button className={status === 2 ? 'primary' : ''} onClick={() => showQueue(2)}>Approved</button><button onClick={() => selectedId ? detail.retry() : queue.retry()}>{selectedId ? 'Refresh details' : 'Refresh'}</button></div>}>
     {success && <p className="success" role="status">{success}</p>}
     <Feedback error={error} />

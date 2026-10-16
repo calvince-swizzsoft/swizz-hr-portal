@@ -72,6 +72,9 @@ not a substitute for current preview/balance requests.
 
 `ApplicationPage`: `PageIndex`, `PageSize`, `TotalCount`, `TotalPages`,
 `PageCollection` (LeaveApplication[]). Empty page: empty array, count/pages zero.
+The Supabase processing queue may additionally return `InvalidCount` for
+pending/approved mirror rows with no employee profile; those rows are excluded
+from actionable results and cannot be opened or decided.
 
 `LeavePreview`: `RequestedDays` (number), `CanSubmit` (boolean), `Error` (nullable
 string), `Cycles` (LeaveCycleBalance[]).

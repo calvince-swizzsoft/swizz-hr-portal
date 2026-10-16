@@ -37,6 +37,11 @@ apply the new migration. Its old `portal_dev_*` tables remain intact but unused.
 Do not delete them until any useful synthetic data has been reviewed. That
 superseded creation script is no longer part of the repository's setup.
 
+After applying the optional leave workflow migration, also apply
+`migrations/20261020000000_processing_queue_unlinked_rows.sql`. It excludes
+processing rows whose employee profile is missing from the actionable queue,
+reports their count, and prevents opening or deciding an unlinked request.
+
 ## Login using an existing employee
 
 1. Create a confirmed email/password user in Supabase Authentication > Users,
