@@ -62,7 +62,9 @@ Dinah owns profile and application details/editing/status. Tess owns balances,
 history, previews and their validation states. Both should extend the shared
 contracts and migrations before adding screen-specific database access.
 
-Included: login, ERP initial-password change, read-only profile, eligible leave
+Included: login, ERP initial-password change, profile (employees can edit their
+own name, email and mobile in Supabase mode; editing is hidden in ERP mode until
+an ERP endpoint exists), eligible leave
 types, own application list/details, request submission, pending edits and
 withdrawal, balance/history and preview screens. Supabase passwords are managed
 through its dashboard; it does not simulate the ERP initial-password workflow.
@@ -70,8 +72,14 @@ through its dashboard; it does not simulate the ERP initial-password workflow.
 Balances and previews in Supabase are fixed scenarios, not live calculations.
 They do not change when requests are submitted or withdrawn. Unknown preview
 dates cannot be submitted; unknown balance scenarios return a clear error.
-Synthetic notifications are not sent. Payroll/P9/requisitions and HR processing
-screens are not implemented. The source models are aligned to the local ERP
+Synthetic notifications are not sent. The **Approvals** section lists pending and
+approved leave and lets a permitted approver approve or reject with remarks. It
+uses the existing processing operations: permission (22017 pending, 22018
+approved) and self-approval are enforced by the ERP or the leave-workflow
+migration, and users without permission see a denial with no records. In
+Supabase mode, apply `supabase/migrations/20261019000000_leave_workflow.sql` and
+grant permissions as in the [workflow guide](docs/LEAVE_WORKFLOW_GUIDE.md).
+Payroll/P9/requisitions screens are not implemented. The source models are aligned to the local ERP
 controller/DTO definitions, but live authenticated integration must still be
 verified before rollout.
 

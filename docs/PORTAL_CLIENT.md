@@ -18,6 +18,7 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `clearToken()` | None | void or promise; callers may await | Local session cleanup |
 | `changeInitialPassword(body)` | `{ UserName, CurrentPassword, NewPassword, ConfirmPassword }` | ERP login result; unsupported in synthetic mode | POST `auth/change-initial-password` |
 | `profile(options)` | None | EmployeeProfile | GET `hr-portal/me` |
+| `updateProfile(changes)` | ProfileChanges | Saved EmployeeProfile | None yet; ERP rejects with 501. Needs an ERP endpoint such as PUT `hr-portal/me` |
 | `leaveTypes(options)` | None | LeaveType[] | GET `hr-portal/me/leave-types` |
 | `applications(pageIndex=0, options)` | Zero-based page, fixed pageSize 20 | ApplicationPage | GET `hr-portal/me/leave-applications` |
 | `application(id, options)` | Own application ID | LeaveApplication | GET `hr-portal/me/leave-applications/{id}` |
@@ -30,7 +31,8 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `processingApplication(id, options)` | Processing application ID | `{ Application, Preview }` | GET `hr-portal/processing/leave-applications/{id}` |
 | `authorizeLeave(id, body)` | `{ decision:'approve' or 'reject', remarks }` | Saved LeaveApplication | POST `hr-portal/processing/leave-applications/{id}/authorize` |
 
-`source` and `loginLabel` are presentation metadata. In Supabase mode login uses
+`source`, `loginLabel` and `canEditProfile` are presentation metadata; screens
+hide profile editing when `canEditProfile` is false (currently ERP). In Supabase mode login uses
 an Auth email; ERP accepts its normal username. Do not persist tokens in storage.
 No real credentials are supplied in code or seed SQL.
 
@@ -44,6 +46,14 @@ No real credentials are supplied in code or seed SQL.
 `EmployeeTypeDescription`, `EmployeeTypeCategoryDescription`,
 `NationalSocialSecurityFundNumber`, `NationalHospitalInsuranceFundNumber`.
 Employment descriptions, contacts, statutory numbers and optional IDs can be null.
+
+`ProfileChanges`: any of `CustomerFullName`, `CustomerIndividualFirstName`,
+`CustomerAddressEmail`, `CustomerAddressMobileLine` (strings; blank clears an
+optional field). Full name is required when sent; email and mobile are format
+checked. Other fields, including `Id`, are rejected rather than ignored by the
+server, and the client sends only these four (`src/lib/profileFields.js`). The
+signed-in identity selects the record. Payroll, statutory and employment details
+remain HR-controlled. Validation failures are 400 `PROFILE_VALIDATION_FAILED`.
 
 `LeaveType`: `Id`, `Description`, `Entitlement` (number), `IsAccrued` (boolean),
 `UnitType` (number), `UnitTypeDescription`, `ExcludeHolidays`, `ExcludeWeekends`.

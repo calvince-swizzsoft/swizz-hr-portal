@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { ApiError } from './api.js';
+import { pickProfileChanges } from './profileFields.js';
 
 export function createSupabasePortalClient({ supabase: injected, supabaseUrl, supabaseKey, onUnauthorized = () => {} } = {}) {
   let client = injected;
@@ -19,18 +20,21 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     if (status === 401) { expiresAt = 0; onUnauthorized(); }
     throw error;
   }
-  async function request(operation, args = {}, { signal } = {}) {
+  // Most operations go through portal_dev_request; rpc names a separate development function and its parameters.
+  async function request(operation, args = {}, { signal } = {}, rpc = ['portal_dev_request', { operation, args }]) {
     signal?.throwIfAborted();
     if (!expiresAt || Date.now() >= expiresAt) fail('Your session has ended. Please sign in again.', 401, 'AUTHENTICATION_REQUIRED');
     try {
-      let query = getClient().rpc('portal_dev_request', { operation, args });
+      let query = getClient().rpc(...rpc);
       if (signal) query = query.abortSignal(signal);
       const { data, error, status } = await query;
       signal?.throwIfAborted();
       if (error) {
         if (error.name === 'AbortError') throw error;
         const setupErrors = {
-          PGRST202: 'The development API function is unavailable. Apply the existing-mirror adapter migration to this Supabase project.',
+          PGRST202: rpc[0] === 'portal_dev_update_profile'
+            ? 'Profile editing is unavailable. Apply the profile self-service migration to this Supabase project.'
+            : 'The development API function is unavailable. Apply the existing-mirror adapter migration to this Supabase project.',
           '42501': 'Access to the development API was denied. Check the migration grants and the signed-in Auth role.',
           '42P01': 'A required development table or view is missing. Check that the adapter migration completed successfully.',
           '42703': 'The development database columns do not match the adapter. Check the adapter migration.',
@@ -52,6 +56,7 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
   return {
     source: 'supabase',
     loginLabel: 'Email',
+    canEditProfile: true,
     async login(body) {
       const { data, error } = await getClient().auth.signInWithPassword({ email: body.UserName ?? body.userName, password: body.Password ?? body.password });
       if (error) fail('Sign-in failed. Check your development account credentials.', error.status || 401, error.code);
@@ -67,6 +72,7 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     },
     async changeInitialPassword() { throw new ApiError('Manage development passwords in Supabase Auth. ERP first-login behaviour is tested in ERP mode.', 400); },
     profile: (options) => request('profile', {}, options),
+    updateProfile: (changes) => request('updateProfile', {}, {}, ['portal_dev_update_profile', { changes: pickProfileChanges(changes) }]),
     leaveTypes: (options) => request('leaveTypes', {}, options),
     applications: (pageIndex = 0, options) => request('applications', { pageIndex, pageSize: 20 }, options),
     application: (id, options) => request('application', { id }, options),

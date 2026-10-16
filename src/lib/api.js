@@ -35,11 +35,14 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
   return {
     source: 'erp',
     loginLabel: 'Username',
+    // No ERP endpoint for employee profile changes is known yet; screens hide editing when false.
+    canEditProfile: false,
     setToken(value) { token = value; },
     clearToken() { token = null; },
     login: (body) => request('auth/login', { method: 'POST', body, anonymous: true }),
     changeInitialPassword: (body) => request('auth/change-initial-password', { method: 'POST', body, anonymous: true }),
     profile: (options) => request('hr-portal/me', options),
+    async updateProfile() { throw new ApiError('Updating your details is not available yet. Contact HR to change them.', 501); },
     leaveTypes: (options) => request('hr-portal/me/leave-types', options),
     applications: (pageIndex = 0, options) => request(`hr-portal/me/leave-applications?pageIndex=${pageIndex}&pageSize=20`, options),
     application: (id, options) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, options),

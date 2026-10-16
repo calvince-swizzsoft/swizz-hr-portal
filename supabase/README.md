@@ -37,6 +37,18 @@ apply the new migration. Its old `portal_dev_*` tables remain intact but unused.
 Do not delete them until any useful synthetic data has been reviewed. That
 superseded creation script is no longer part of the repository's setup.
 
+## Apply the profile self-service migration
+
+After the adapter migration, run `migrations/20261020000000_profile_self_service.sql`
+to enable **Edit my details** on the profile screen. It adds the authenticated
+`portal_dev_update_profile` RPC, which derives the employee from `auth.uid()` and
+updates only full name, first name, email and mobile on that employee's own row.
+Any other field, including `Id` or payroll and statutory numbers, is rejected
+and nothing is saved. Direct table updates stay revoked. Safe to run again.
+After seeding, `tests/profile-edit.test.sql` checks ownership, allowlisting and
+validation in a transaction that rolls back. Without this migration the profile
+screen reports that the profile self-service migration is missing.
+
 ## Login using an existing employee
 
 1. Create a confirmed email/password user in Supabase Authentication > Users,
