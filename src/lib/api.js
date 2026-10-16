@@ -3,6 +3,7 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
     this.correlationId = correlationId;
+    this.code = null;
   }
 }
 
@@ -24,12 +25,16 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     const data = await response.json().catch(() => null);
     if (!response.ok || data?.success === false) {
       if (response.status === 401 && !anonymous) { token = null; onUnauthorized(); }
-      throw new ApiError(data?.message || data?.Message || 'The request could not be completed.', response.status, data?.correlationId);
+      const error = new ApiError(data?.message || data?.Message || 'The request could not be completed.', response.status, data?.correlationId);
+      error.code = data?.error?.code || null;
+      throw error;
     }
     if (data === null) throw new ApiError('The HR service returned an unexpected response. Check the API connection.', response.status);
     return data && Object.hasOwn(data, 'data') ? data.data : data;
   }
   return {
+    source: 'erp',
+    loginLabel: 'Username',
     setToken(value) { token = value; },
     clearToken() { token = null; },
     login: (body) => request('auth/login', { method: 'POST', body, anonymous: true }),
@@ -37,8 +42,14 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     profile: (options) => request('hr-portal/me', options),
     leaveTypes: (options) => request('hr-portal/me/leave-types', options),
     applications: (pageIndex = 0, options) => request(`hr-portal/me/leave-applications?pageIndex=${pageIndex}&pageSize=20`, options),
+    application: (id, options) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, options),
+    balances: (query, options) => request(`hr-portal/me/leave-balances?${new URLSearchParams(query)}`, options),
     preview: (query, options) => request(`hr-portal/me/leave-preview?${new URLSearchParams(query)}`, options),
     submitLeave: (body) => request('hr-portal/me/leave-applications', { method: 'POST', body }),
+    updateLeave: (id, body) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, { method: 'PUT', body }),
     withdraw: (id) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}/withdraw`, { method: 'POST' }),
+    processingApplications: (query = {}, options) => request(`hr-portal/processing/leave-applications?${new URLSearchParams(query)}`, options),
+    processingApplication: (id, options) => request(`hr-portal/processing/leave-applications/${encodeURIComponent(id)}`, options),
+    authorizeLeave: (id, body) => request(`hr-portal/processing/leave-applications/${encodeURIComponent(id)}/authorize`, { method: 'POST', body }),
   };
 }

@@ -1,0 +1,13 @@
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.row-actions button { padding: 8px 10px; }
+.type-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.list-row > *, .card-header > *, .form-heading > * { min-width: 0; overflow-wrap: anywhere; }
+.sidebar nav { flex-wrap: wrap; }
+.login-intro { background-image: none; }
+.login-intro h1 { font-size: 36px; letter-spacing: 0; }
+.request-form h2 { font-size: 20px; }
+@media (max-width: 600px) {
+  .login-intro h1 { font-size: 30px; letter-spacing: 0; }
+  .type-row { grid-template-columns: minmax(0, 1fr); }
+  .sidebar nav a { padding: 10px; }
+}

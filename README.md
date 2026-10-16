@@ -1,36 +1,79 @@
 # Swift HR Portal
 
-Standalone React + Vite frontend for WebApplication1's HR portal APIs. Uses the ERP user store and database through the API; no separate backend or database.
+Employee self-service for the Swift Financials ERP. React screens use one
+`portalClient` contract, backed by either WebApplication1 or an authenticated
+Supabase development model. WebApplication1 remains the production source of
+truth; Supabase contains synthetic test scenarios only.
 
-## Theme and colors
+## Start
 
-The portal must resemble the current **reactfosa ERP app** in theme, colors and component styling. Its canonical design reference is `C:\Users\ckoda\Desktop\workrepos\reactfosa\reactfosa\CLAUDE.md` (Design Language section).
-
-Employee-facing screens follow the ERP's Operational pattern: indigo branding and primary actions, gray neutrals, white page cards, matching typography, status colors, list rows and pagination. The separate Administration pattern is reserved for screens intentionally matching ERP administration. Detailed contributor requirements are recorded in [AGENTS.md](./AGENTS.md).
-
-## Run locally
+Requires Node >=22.12.0.
 
 ```powershell
-npm install
+npm ci
 Copy-Item .env.example .env
 npm run dev
 ```
 
-Open http://127.0.0.1:5174. Start WebApplication1 separately. Its project config uses http://localhost:58240; change `API_PROXY_TARGET` in `.env` if your running API uses another address. The development proxy avoids browser cross-origin configuration. No credentials are included in this project.
+Open http://127.0.0.1:5174. Choose exactly one data source in `.env` and restart
+Vite after changes. Never put credentials, service-role keys, or signing secrets
+in browser-exposed `VITE_` variables.
 
-## Included
+### Supabase development
 
-- Existing ERP login and initial password-change flow.
-- Employee linkage/access validation using `/api/hr-portal/me`.
-- Read-only employee profile.
-- Leave types screen reading the `public.leave_types_mirror` mirror from Supabase.
-- Submit, view, edit, and accept/reject synthetic rows in `public.leave_application_mirror`, including source payload and sync time.
-- In Vite development mode, **Continue without signing in** opens profile, leave, leave types, and application screens without creating an ERP session. Personal profile/leave screens show empty states; the application form is not submitted.
-- Personal leave list with paging, withdrawal, submission and server-calculated balance previews.
-- Memory-only bearer token, explicit sign out and return to login on 401. Reloading requires sign-in.
-- Responsive indigo interface, loading/error/empty states and cancellation of obsolete preview requests.
+```dotenv
+VITE_DATA_SOURCE=supabase
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLIC_KEY
+```
 
-This is an initial portal project. HR processing screens, application editing/detail screens, dedicated balance/history views and notification retry UI can be added using the existing backend contracts. No employee identity is fabricated and no employee data is shown without authentication.
+Follow [Supabase setup](supabase/README.md) to execute migrations, create test Auth
+users, and load the synthetic seed. Sign in using a test user's email/password.
+There is no anonymous development login or unrestricted employee directory.
+Sessions stay in memory; reloading requires signing in again.
+
+### ERP integration
+
+```dotenv
+VITE_DATA_SOURCE=erp
+VITE_API_BASE_URL=/api
+API_PROXY_TARGET=https://fosa-api.ngrok.dev
+```
+
+Use an active employee-linked ERP account. `API_PROXY_TARGET` is used only by
+the Vite development server; the default example points to local WebApplication1.
+For hosted production, serve API and frontend under one HTTPS origin or configure
+approved CORS origins and an appropriate `VITE_API_BASE_URL` including `/api`.
+Failed ERP requests never fall back to Supabase. Switching sources requires a
+restart/rebuild and a new sign-in, not changes to screen code.
+
+## Implementation and ownership
+
+- [Client operations and response models](docs/PORTAL_CLIENT.md)
+- [Supabase schema and development scenarios](supabase/README.md)
+- [Dinah and Tess leave workflow assignments and SQL](docs/LEAVE_WORKFLOW_GUIDE.md)
+- `src/lib/portalClient.js`: selects one adapter for the application session.
+- `src/lib/api.js`: ERP HTTP transport and error handling.
+- `src/lib/supabasePortalClient.js`: Supabase Auth and development RPC adapter
+  backed by the existing employee and leave mirror tables.
+- `src/App.jsx`: employee screens; no direct Supabase calls.
+
+Dinah owns profile and application details/editing/status. Tess owns balances,
+history, previews and their validation states. Both should extend the shared
+contracts and migrations before adding screen-specific database access.
+
+Included: login, ERP initial-password change, read-only profile, eligible leave
+types, own application list/details, request submission, pending edits and
+withdrawal, balance/history and preview screens. Supabase passwords are managed
+through its dashboard; it does not simulate the ERP initial-password workflow.
+
+Balances and previews in Supabase are fixed scenarios, not live calculations.
+They do not change when requests are submitted or withdrawn. Unknown preview
+dates cannot be submitted; unknown balance scenarios return a clear error.
+Synthetic notifications are not sent. Payroll/P9/requisitions and HR processing
+screens are not implemented. The source models are aligned to the local ERP
+controller/DTO definitions, but live authenticated integration must still be
+verified before rollout.
 
 ## Verify
 
@@ -39,37 +82,16 @@ npm test
 npm run check
 ```
 
-`check` runs Vite development transforms; it does not produce production artifacts. No production build or hosting deployment is configured at this stage.
+Tests cover HTTP/Supabase adapter contracts and failure handling without live
+business writes. The Supabase setup guide includes isolated SQL tests for
+ownership and mutation constraints. `check` runs development transforms, not a
+production build. Never verify against live submissions, withdrawals, password
+changes or notifications without explicit authorization.
 
-## API contracts
+## Theme
 
-Backend specification: `C:\Users\ckoda\source\repos\Swift-Financials-FOSA\docs\api\hr-portal-api-spec.md`.
-
-`VITE_API_BASE_URL` is the base prefix, including `/api`; it defaults to `/api`. Browser-exposed VITE variables must never contain secrets. For deployment, serve the portal and API under one HTTPS origin or explicitly configure the API's approved portal origin. Vite's proxy only applies in development.
-
-The leave types screen reads `erp_id` and `description` from `public.leave_types_mirror` using `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Enable row-level security and grant the browser's `anon` role read-only access only if leave type names are intended to be public. Never use a Supabase service-role key in the browser.
-
-The Vite development-only no-sign-in button is a UI shortcut only; it creates no employee identity and makes no employee profile or leave-list API calls. The application form inserts a clearly synthetic row into the Supabase mirror only (demo employee ID `DEMO`, pending status); it does not submit to the ERP, check balances, or notify HR. Production still requires ERP sign-in; the ERP remains authoritative for real leave requests and balance calculations.
-
-The **Applications** screen reads, inserts, edits, and accepts/rejects `public.leave_application_mirror` rows using the Supabase anonymous/publishable key. Run [leave-application-mirror-test-access.sql](./supabase/leave-application-mirror-test-access.sql) only in a separate non-production project containing synthetic rows. The script permits anonymous select/update and inserts marked as `DEMO`; anyone with the project URL/key can read or edit every row. Never use this policy with real employee data or production. Accept/reject updates only the Supabase mirror (`2`/`Accepted`, `4`/`Rejected`); it does not update the ERP or perform an official approval workflow.
-## Supabase (optional)
-
-`@supabase/supabase-js` is installed and `src/lib/supabase.js` exports a client that is `null` unless `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (or the legacy `VITE_SUPABASE_ANON_KEY`) are set in `.env`. Check `isSupabaseConfigured` before use. No screen uses it yet.
-
-- Supabase is not a source of truth for employee, profile or leave data; those stay on WebApplication1 and its `/api/hr-portal/me` contracts.
-
-### Temporary employee mirror
-
-Until the ERP HR portal APIs are ready, the portal can show test employee records from a Supabase `employee_mirror` table whose columns use the `/api/hr-portal/me` response field names, so the profile screen needs no mapping.
-
-1. Run `supabase/migrations/20261016000000_employee_mirror.sql`, then `supabase/migrations/20261016010000_employee_mirror_public_read.sql`, in the Supabase SQL editor.
-2. Add test rows in Table Editor → `employee_mirror`.
-3. Set `VITE_EMPLOYEE_DATA_SOURCE=supabase` in `.env` and restart `npm run dev`.
-
-The portal then opens on an Employees list (20 per page) with a profile page per employee, and no sign-in. The second migration makes the table readable by anyone with the publishable key, so use test data only, never real employee records. Its header shows how to undo it.
-
-Limitations: the ERP API currently has only the signed-in employee's `/me` profile, not an employee list, so the list screen has no matching ERP contract yet. A real directory would need a new ERP endpoint with HR permissions enforced by the ERP. Leave screens are not shown in this mode. The columns cover the fields the profile screen uses today; the full API specification was not available, so add columns from a real `/api/hr-portal/me` response as needed. Remove the mirror once the ERP API is available.
-- Only the public publishable (or legacy anon) key may be used. It is visible in the browser, so access must be restricted with Row Level Security policies in Supabase. Never put a secret or `service_role` key in a VITE variable.
-- Supabase sessions are not persisted to browser storage, matching the portal's memory-only token rule. Supabase auth is separate from ERP login.
-
-Before public rollout, strengthen backend login lockout/session revocation as discussed. Browser sign out currently removes the local token; it does not revoke an issued ERP JWT. No live business records have been submitted during scaffold verification.
+Follow the reactfosa Operational design language in
+`C:\Users\ckoda\Desktop\workrepos\reactfosa\reactfosa\CLAUDE.md`:
+indigo navigation/title bars/actions, white page cards, gray list wrappers,
+consistent status colors, system typography and centered pagination. Details
+are in [AGENTS.md](AGENTS.md).
