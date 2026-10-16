@@ -6,6 +6,7 @@ import { supabase } from './lib/supabase.js';
 
 // TEMPORARY: 'supabase' shows test employee data from the Supabase mirror table, without sign-in, until the ERP HR APIs are ready.
 const usesMirror = import.meta.env.VITE_EMPLOYEE_DATA_SOURCE === 'supabase';
+import { fetchLeaveTypes } from './lib/supabaseClient.js';
 
 const dateText = (value) => value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -17,6 +18,7 @@ function Card({ title, children, action }) { return <section className="page-car
 export default function App() {
   const [profile, setProfile] = useState(null);
   const [notice, setNotice] = useState('');
+  const [previewMode, setPreviewMode] = useState(import.meta.env.DEV);
   const navigate = useNavigate();
   const api = useMemo(() => usesMirror ? createMirrorApiClient({ supabase }) : createApiClient({ baseUrl: import.meta.env.VITE_API_BASE_URL || '/api', onUnauthorized: () => {
     setProfile(null); setNotice('Your session has ended. Please sign in again.');
@@ -27,7 +29,7 @@ export default function App() {
     try {
       const employee = await api.profile();
       if (!employee?.Id) throw new Error('The employee profile response was incomplete. Contact HR.');
-      setProfile(employee); setNotice(''); navigate('/profile');
+      setProfile(employee); setNotice(''); setPreviewMode(false); navigate('/profile');
     }
     catch (error) { api.clearToken(); throw error; }
   }
@@ -50,9 +52,17 @@ function Shell({ home, label, nav, footer, greeting, status, children }) {
       <p className="nav-label">{label}</p><nav>{nav}</nav>
       <div className="sidebar-bottom">{footer}</div></aside>
     <main><div className="topbar"><span>{greeting}</span><span className="status-dot">{status}</span></div>{children}</main></div>;
+  if (!profile && !previewMode) return <Login api={api} signedIn={signedIn} notice={notice} onPreview={() => setPreviewMode(true)} />;
+  return <div className="app-shell">
+    <aside className="sidebar"><a className="brand" href="/profile"><span className="brand-icon">S</span><span>Swift<span className="brand-sub">HR PORTAL</span></span></a>
+      <p className="nav-label">{previewMode ? 'DEVELOPMENT PREVIEW' : 'EMPLOYEE SELF-SERVICE'}</p><nav style={{ flexWrap: 'wrap' }}>{previewMode ? <NavLink to="/leave-types">Leave types</NavLink> : <><NavLink to="/profile">My profile</NavLink><NavLink to="/leave">My leave</NavLink><NavLink to="/leave-types">Leave types</NavLink></>}</nav>
+      <div className="sidebar-bottom">{previewMode ? <><span>Read-only preview</span><button onClick={() => setPreviewMode(false)}>Sign in</button></> : <><span>{profile.CustomerFullName || 'Employee'}</span><button onClick={logout}>Sign out</button></>}</div></aside>
+    <main><div className="topbar"><span>{previewMode ? 'Leave types preview' : `Welcome, ${profile.CustomerIndividualFirstName || 'colleague'}`}</span><span className="status-dot">{previewMode ? 'Development only · no employee session' : 'Employee portal'}</span></div>
+      <Routes>{previewMode ? <><Route path="/leave-types" element={<LeaveTypes />} /><Route path="*" element={<Navigate to="/leave-types" replace />} /></> : <><Route path="/profile" element={<Profile profile={profile} />} /><Route path="/leave" element={<Leave api={api} />} /><Route path="/leave-types" element={<LeaveTypes />} /><Route path="*" element={<Navigate to="/profile" replace />} /></>}</Routes>
+    </main></div>;
 }
 
-function Login({ api, signedIn, notice }) {
+function Login({ api, signedIn, notice, onPreview }) {
   const [username, setUsername] = useState(''); const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('');
   const [initial, setInitial] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(null);
@@ -70,7 +80,7 @@ function Login({ api, signedIn, notice }) {
       <Field label="Username"><input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} disabled={busy || initial} /></Field>
       <Field label={initial ? 'Temporary password' : 'Password'}><input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></Field>
       {initial && <><Field label="New password"><input required type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></Field><Field label="Confirm new password"><input required type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></Field></>}
-      <button className="primary full" disabled={busy}>{busy ? 'Signing in…' : initial ? 'Change password and sign in' : 'Sign in'}</button><p className="help">Need an account or email confirmation? Contact your HR administrator.</p></form></div></div>;
+      <button className="primary full" disabled={busy}>{busy ? 'Signing in…' : initial ? 'Change password and sign in' : 'Sign in'}</button>{import.meta.env.DEV && <button type="button" className="full preview-access" onClick={onPreview} disabled={busy}>Open leave types preview</button>}<p className="help">Need an account or email confirmation? Contact your HR administrator.</p></form></div></div>;
 }
 
 function Profile({ profile, title = 'My employee profile', action, help = 'To correct your employee details, contact HR.' }) {
@@ -111,6 +121,36 @@ function EmployeeDetail({ api }) {
   if (error) return <Card title="Employee profile" action={back}><Feedback error={error} />{error.status !== 404 && <div className="empty"><button onClick={() => setRevision(x => x + 1)}>Try again</button></div>}</Card>;
   if (!employee) return <Card title="Employee profile" action={back}><div className="empty" role="status">Loading employee profile…</div></Card>;
   return <Profile profile={employee} title="Employee profile" action={back} help="Test record from the Supabase mirror table. Edit it in the Supabase dashboard." />;
+}
+
+function LeaveTypes() {
+  const [types, setTypes] = useState([]);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    setLoading(true);
+    setError(null);
+    fetchLeaveTypes(abort.signal)
+      .then(value => { if (!abort.signal.aborted) setTypes(value); })
+      .catch(e => { if (e.name !== 'AbortError') setError(e); })
+      .finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    return () => abort.abort();
+  }, [revision]);
+
+  return <Card title="Leave types">
+    <p className="muted section-intro">Leave types configured in the HR system.</p>
+    {loading ? <div className="empty" role="status">Loading leave types…</div>
+      : error ? <div className="empty"><Feedback error={error} /><button onClick={() => setRevision(x => x + 1)}>Try again</button></div>
+        : types.length ? <div className="list-wrapper" role="list" aria-label="Available leave types">
+          {types.map(type => <div className="list-row" role="listitem" key={type.erp_id} style={{ gridTemplateColumns: '1fr' }}>
+            <strong>{type.description}</strong>
+          </div>)}
+        </div>
+          : <div className="empty"><strong>No leave types available</strong><p>No leave types are currently configured. Contact HR if you think this is incorrect.</p></div>}
+  </Card>;
 }
 
 function Leave({ api }) {

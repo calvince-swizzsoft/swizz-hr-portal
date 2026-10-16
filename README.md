@@ -23,6 +23,8 @@ Open http://127.0.0.1:5174. Start WebApplication1 separately. Its project config
 - Existing ERP login and initial password-change flow.
 - Employee linkage/access validation using `/api/hr-portal/me`.
 - Read-only employee profile.
+- Leave types screen reading the `public.leave_types_mirror` mirror from Supabase.
+- In Vite development mode, opens a read-only leave-types preview without signing in; this does not create an employee session or enable profile/leave-request access.
 - Personal leave list with paging, withdrawal, submission and server-calculated balance previews.
 - Memory-only bearer token, explicit sign out and return to login on 401. Reloading requires sign-in.
 - Responsive indigo interface, loading/error/empty states and cancellation of obsolete preview requests.
