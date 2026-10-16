@@ -12,6 +12,19 @@ test('login sends no bearer token and profile uses the established token', async
   assert.equal(calls[1][1].headers.Authorization, 'Bearer session-token');
 });
 
+test('leave types are loaded from the employee-scoped endpoint', async () => {
+  const calls = [];
+  const api = createApiClient({ fetchImpl: async (...args) => {
+    calls.push(args);
+    return new Response(JSON.stringify({ success: true, data: [{ Id: 'annual', Description: 'Annual leave' }] }));
+  } });
+  api.setToken('session-token');
+
+  assert.deepEqual(await api.leaveTypes(), [{ Id: 'annual', Description: 'Annual leave' }]);
+  assert.equal(calls[0][0], '/api/hr-portal/me/leave-types');
+  assert.equal(calls[0][1].headers.Authorization, 'Bearer session-token');
+});
+
 test('expired sessions clear authentication and propagate the safe error', async () => {
   let ended = false;
   const calls = [];
