@@ -46,22 +46,27 @@ Backend specification: `C:\Users\ckoda\source\repos\Swift-Financials-FOSA\docs\a
 
 ## Supabase (optional)
 
-`@supabase/supabase-js` is installed and `src/lib/supabase.js` exports a client that is `null` unless `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (or the legacy `VITE_SUPABASE_ANON_KEY`) are set in `.env`. Check `isSupabaseConfigured` before use. No screen uses it yet.
+`@supabase/supabase-js` is installed and `src/lib/supabase.js` exports a client that is `null` unless `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (or the legacy `VITE_SUPABASE_ANON_KEY`) are set in `.env`. Check `isSupabaseConfigured` before use. It is used only by the temporary employee mirror below.
 
 - Supabase is not a source of truth for employee, profile or leave data; those stay on WebApplication1 and its `/api/hr-portal/me` contracts.
+- Only the public publishable (or legacy anon) key may be used. It is visible in the browser, so access must be restricted with Row Level Security policies in Supabase. Never put a secret or `service_role` key in a VITE variable.
+- Supabase sessions are not persisted to browser storage, matching the portal's memory-only token rule. Supabase auth is separate from ERP login.
 
 ### Temporary employee mirror
 
-Until the ERP HR portal APIs are ready, the portal can show test employee records from a Supabase `employee_mirror` table whose columns use the `/api/hr-portal/me` response field names, so the profile screen needs no mapping.
+Until the ERP HR portal APIs are ready, the portal can show development test employee records from a Supabase `employee_mirror` table whose columns use the `/api/hr-portal/me` response field names, so the profile screen needs no mapping.
 
-1. Run `supabase/migrations/20261016000000_employee_mirror.sql`, then `supabase/migrations/20261016010000_employee_mirror_public_read.sql`, in the Supabase SQL editor.
-2. Add test rows in Table Editor → `employee_mirror`.
-3. Set `VITE_EMPLOYEE_DATA_SOURCE=supabase` in `.env` and restart `npm run dev`.
+1. Run the files in `supabase/migrations/` in name order in the Supabase SQL editor, each in a new, empty query. The last one replaces the earlier public read access with access for signed-in users and is safe to run again.
+2. Create a development user under Authentication → Users → Add user (email and a password of at least 6 characters; tick Auto confirm user). Never put credentials in code or `.env`. A username without `@` signs in as `<username>@example.com`, so a user created as `admin@example.com` signs in with the username `admin`.
+3. Add test rows in Table Editor → `employee_mirror`.
+4. Set `VITE_EMPLOYEE_DATA_SOURCE=supabase` in `.env` and restart `npm run dev`.
 
-The portal then opens on an Employees list (20 per page) with a profile page per employee, and no sign-in. The second migration makes the table readable by anyone with the publishable key, so use test data only, never real employee records. Its header shows how to undo it.
+The portal then asks for the Supabase user's username or email and password, and opens on an Employees list (20 per page) with a profile page per employee. Any signed-in user can see every row and use **Edit details** to change every profile field except `Id` (listed in `EDITABLE_FIELDS` in `src/lib/mirrorApi.js`). The session is kept in memory, so reloading requires signing in again. Use development test data only, never real employee records.
 
-Limitations: the ERP API currently has only the signed-in employee's `/me` profile, not an employee list, so the list screen has no matching ERP contract yet. A real directory would need a new ERP endpoint with HR permissions enforced by the ERP. Leave screens are not shown in this mode. The columns cover the fields the profile screen uses today; the full API specification was not available, so add columns from a real `/api/hr-portal/me` response as needed. Remove the mirror once the ERP API is available.
-- Only the public publishable (or legacy anon) key may be used. It is visible in the browser, so access must be restricted with Row Level Security policies in Supabase. Never put a secret or `service_role` key in a VITE variable.
-- Supabase sessions are not persisted to browser storage, matching the portal's memory-only token rule. Supabase auth is separate from ERP login.
+Payslips and P9 forms: `supabase/migrations/20261016030000_payslip_p9_mirror.sql` adds `payslip_mirror` and `p9_mirror` tables and a private `hr-documents` storage bucket. Add rows linked to an employee's `Id` with figures typed in by hand, upload fake PDFs to the bucket and put each file's path (for example `payslips/2026-10.pdf`) in `FilePath`. The sidebar's **Payslips** and **P9 forms** pages then list every employee's documents, newest first and 20 per page, with the employee's name, the figures (for payslips) and a **Download PDF** button that opens a link valid for 5 minutes. The portal never calculates pay or tax. Column names are provisional until the ERP payroll API contract is known.
+
+In ERP mode, **My payslips** and **My P9** show an empty state: no payroll endpoints are known in the ERP HR portal API, so the portal does not call any.
+
+Limitations: the ERP API currently has only the signed-in employee's `/me` profile, not an employee list or update, so these screens have no matching ERP contract yet. A real directory would need new ERP endpoints with HR permissions enforced by the ERP. Leave screens are not shown in this mode. The columns cover the fields the profile screen uses today; the full API specification was not available, so add columns from a real `/api/hr-portal/me` response as needed. Remove the mirror once the ERP API is available.
 
 Before public rollout, strengthen backend login lockout/session revocation as discussed. Browser sign out currently removes the local token; it does not revoke an issued ERP JWT. No live business records have been submitted during scaffold verification.

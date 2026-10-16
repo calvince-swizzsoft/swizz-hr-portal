@@ -2,7 +2,7 @@
 
 This is a standalone React frontend for the Swift Financials ERP. WebApplication1 is the API backend; do not introduce a second employee database or duplicate leave calculations in the browser.
 
-- Temporary exception: while the ERP HR portal APIs are being finished, `VITE_EMPLOYEE_DATA_SOURCE=supabase` shows an employee list and profiles from the Supabase `employee_mirror` table (`supabase/migrations/`) without sign-in. It mirrors the `/api/hr-portal/me` response shape, is publicly readable, holds test data only and is not a source of truth. Do not add leave calculations or other business logic to it; remove it once the ERP APIs are available.
+- Temporary exception: while the ERP HR portal APIs are being finished, `VITE_EMPLOYEE_DATA_SOURCE=supabase` signs in with a Supabase Auth development user and shows an editable employee list and profiles from the Supabase `employee_mirror` table (`supabase/migrations/`). It mirrors the `/api/hr-portal/me` response shape, holds development test data only and is not a source of truth. Test payslips and P9 forms (`payslip_mirror`, `p9_mirror`, `hr-documents` bucket) follow the same rule: figures are typed-in test data that is only displayed, and the portal never calculates pay or tax. Do not add leave calculations or other business logic to it; remove it once the ERP APIs are available.
 - Keep browser session tokens in memory. Never commit credentials or put secrets in VITE environment variables.
 - Preserve employee ownership through the `/api/hr-portal/me` API contracts. HR processing permissions are enforced by the ERP.
 - Follow the indigo Operational visual language: white page cards, indigo title bars, gray list wrappers and row cards, centered pagination.
