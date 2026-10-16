@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom';
+import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { createApiClient } from './lib/api.js';
 import {
   fetchLeaveTypes,
@@ -67,9 +67,44 @@ function Login({ api, signedIn, notice, onDemoSignIn }) {
       <button className="primary full" disabled={busy}>{busy ? 'Signing in…' : initial ? 'Change password and sign in' : 'Sign in'}</button>{import.meta.env.DEV && <button type="button" className="full" onClick={onDemoSignIn} disabled={busy}>Continue without signing in</button>}<p className="help">Need an account or email confirmation? Contact your HR administrator.</p></form></div></div>;
 }
 
-function Profile({ profile }) {
+function Profile({ profile, title = 'My employee profile', action, help = 'To correct your employee details, contact HR.' }) {
   const fields = [['Payroll number', profile.CustomerIndividualPayrollNumbers], ['Email', profile.CustomerAddressEmail], ['Mobile', profile.CustomerAddressMobileLine], ['Start date', dateText(profile.EmploymentStartDate)], ['Department', profile.DepartmentDescription], ['Designation', profile.DesignationDescription], ['Branch', profile.BranchDescription], ['Employment type', profile.EmployeeTypeDescription], ['NSSF number', profile.NationalSocialSecurityFundNumber], ['SHA / NHIF number', profile.NationalHospitalInsuranceFundNumber]];
-  return <Card title="My employee profile"><div className="profile-heading"><div className="avatar">{(profile.CustomerIndividualFirstName || profile.CustomerFullName || 'E').slice(0, 1)}</div><div><h2>{profile.CustomerFullName || 'Employee'}</h2><p className="muted">{profile.DesignationDescription || 'Your employment record'}</p></div></div><dl className="details-grid">{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>)}</dl><p className="help">To correct your employee details, contact HR.</p></Card>;
+  return <Card title={title} action={action}><div className="profile-heading"><div className="avatar">{(profile.CustomerIndividualFirstName || profile.CustomerFullName || 'E').slice(0, 1)}</div><div><h2>{profile.CustomerFullName || 'Employee'}</h2><p className="muted">{profile.DesignationDescription || 'Your employment record'}</p></div></div><dl className="details-grid">{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>)}</dl><p className="help">{help}</p></Card>;
+}
+
+function Employees({ api }) {
+  const navigate = useNavigate();
+  const [page, setPage] = useState(0); const [data, setData] = useState(null);
+  const [error, setError] = useState(null); const [loading, setLoading] = useState(true); const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const abort = new AbortController(); setLoading(true); setError(null);
+    api.employees(page, { signal: abort.signal })
+      .then(result => { if (!abort.signal.aborted) setData(result); })
+      .catch(e => { if (e.name !== 'AbortError') setError(e); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    return () => abort.abort();
+  }, [api, page, revision]);
+  return <Card title="Employees">
+    <p className="muted section-intro">Temporary test records from the Supabase mirror table.</p><Feedback error={error} />
+    <div className="list-wrapper"><div className="list-header"><span>Employee</span><span>Department</span><span>Branch</span><span>Actions</span></div>
+      {loading ? <div className="empty" role="status">Loading employees…</div> : error ? <div className="empty"><button onClick={() => setRevision(x => x + 1)}>Try again</button></div> : data?.PageCollection?.length ? data.PageCollection.map(item => <div className="list-row" key={item.Id}><div><strong>{item.CustomerFullName || 'Unnamed employee'}</strong><small>{item.CustomerIndividualPayrollNumbers ? `Payroll ${item.CustomerIndividualPayrollNumbers}` : 'No payroll number'}</small></div><div>{item.DepartmentDescription || '—'}<small>{item.DesignationDescription}</small></div><span>{item.BranchDescription || '—'}</span><div><button onClick={() => navigate(`/employees/${encodeURIComponent(item.Id)}`)}>View profile</button></div></div>) : <div className="empty"><strong>No employees yet</strong><p>Add rows to the employee_mirror table in Supabase to see them here.</p></div>}</div>
+    <div className="pagination"><button disabled={loading || page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, data?.TotalPages || 1)}</span><button disabled={loading || page + 1 >= (data?.TotalPages || 1)} onClick={() => setPage(x => x + 1)}>Next</button></div>
+  </Card>;
+}
+
+function EmployeeDetail({ api }) {
+  const { id } = useParams(); const navigate = useNavigate();
+  const [employee, setEmployee] = useState(null); const [error, setError] = useState(null); const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const abort = new AbortController(); setEmployee(null); setError(null);
+    api.employee(id, { signal: abort.signal })
+      .then(result => { if (!abort.signal.aborted) setEmployee(result); })
+      .catch(e => { if (e.name !== 'AbortError') setError(e); });
+    return () => abort.abort();
+  }, [api, id, revision]);
+  const back = <button onClick={() => navigate('/employees')}>Back to employees</button>;
+  if (error) return <Card title="Employee profile" action={back}><Feedback error={error} />{error.status !== 404 && <div className="empty"><button onClick={() => setRevision(x => x + 1)}>Try again</button></div>}</Card>;
+  if (!employee) return <Card title="Employee profile" action={back}><div className="empty" role="status">Loading employee profile…</div></Card>;
+  return <Profile profile={employee} title="Employee profile" action={back} help="Test record from the Supabase mirror table. Edit it in the Supabase dashboard." />;
 }
 
 function OpenProfile() {
