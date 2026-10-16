@@ -58,20 +58,22 @@ restart/rebuild and a new sign-in, not changes to screen code.
   backed by the existing employee and leave mirror tables.
 - `src/App.jsx`: employee screens; no direct Supabase calls.
 
-Dinah owns profile and application details/editing/status. Tess owns balances,
-history, previews and their validation states. Both should extend the shared
-contracts and migrations before adding screen-specific database access.
+The employee self-service screens and leave approval inbox use the shared
+portal client. Processing access and decisions are enforced by the ERP or the
+synthetic Supabase development RPC; the UI does not grant approval permissions.
 
 Included: login, ERP initial-password change, read-only profile, eligible leave
 types, own application list/details, request submission, pending edits and
-withdrawal, balance/history and preview screens. Supabase passwords are managed
-through its dashboard; it does not simulate the ERP initial-password workflow.
+withdrawal, balance/history and preview screens, and a pending/approved leave
+processing inbox with request details and approve/reject actions. Supabase
+passwords are managed through its dashboard; it does not simulate the ERP
+initial-password workflow.
 
 Balances and previews in Supabase are fixed scenarios, not live calculations.
 They do not change when requests are submitted or withdrawn. Unknown preview
 dates cannot be submitted; unknown balance scenarios return a clear error.
-Synthetic notifications are not sent. Payroll/P9/requisitions and HR processing
-screens are not implemented. The source models are aligned to the local ERP
+Synthetic notifications are not sent. Payroll/P9/requisitions are not
+implemented. The source models are aligned to the local ERP
 controller/DTO definitions, but live authenticated integration must still be
 verified before rollout.
 
