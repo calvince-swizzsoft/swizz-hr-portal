@@ -46,8 +46,24 @@ Backend specification: `C:\Users\ckoda\source\repos\Swift-Financials-FOSA\docs\a
 
 `VITE_API_BASE_URL` is the base prefix, including `/api`; it defaults to `/api`. Browser-exposed VITE variables must never contain secrets. For deployment, serve the portal and API under one HTTPS origin or explicitly configure the API's approved portal origin. Vite's proxy only applies in development.
 
-The leave types screen reads `erp_id` and `description` from `public.leave_types_mirror` using `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Enable row-level security and grant the browser's `anon` role read-only access only if leave type names are intended to be public. Never use a Supabase service-role key in the browser. This mirror is a display source; the ERP API remains authoritative when submitting leave requests and calculating eligibility or balances.
+## Supabase (optional)
 
-The no-login leave-types preview is available only when running Vite in development mode. Production builds still require ERP sign-in; the preview deliberately does not bypass employee authorization for profile or leave APIs.
+`@supabase/supabase-js` is installed and `src/lib/supabase.js` exports a client that is `null` unless `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (or the legacy `VITE_SUPABASE_ANON_KEY`) are set in `.env`. Check `isSupabaseConfigured` before use. No screen uses it yet.
+
+- Supabase is not a source of truth for employee, profile or leave data; those stay on WebApplication1 and its `/api/hr-portal/me` contracts.
+
+### Temporary employee mirror
+
+Until the ERP HR portal APIs are ready, the portal can show test employee records from a Supabase `employee_mirror` table whose columns use the `/api/hr-portal/me` response field names, so the profile screen needs no mapping.
+
+1. Run `supabase/migrations/20261016000000_employee_mirror.sql`, then `supabase/migrations/20261016010000_employee_mirror_public_read.sql`, in the Supabase SQL editor.
+2. Add test rows in Table Editor → `employee_mirror`.
+3. Set `VITE_EMPLOYEE_DATA_SOURCE=supabase` in `.env` and restart `npm run dev`.
+
+The portal then opens on an Employees list (20 per page) with a profile page per employee, and no sign-in. The second migration makes the table readable by anyone with the publishable key, so use test data only, never real employee records. Its header shows how to undo it.
+
+Limitations: the ERP API currently has only the signed-in employee's `/me` profile, not an employee list, so the list screen has no matching ERP contract yet. A real directory would need a new ERP endpoint with HR permissions enforced by the ERP. Leave screens are not shown in this mode. The columns cover the fields the profile screen uses today; the full API specification was not available, so add columns from a real `/api/hr-portal/me` response as needed. Remove the mirror once the ERP API is available.
+- Only the public publishable (or legacy anon) key may be used. It is visible in the browser, so access must be restricted with Row Level Security policies in Supabase. Never put a secret or `service_role` key in a VITE variable.
+- Supabase sessions are not persisted to browser storage, matching the portal's memory-only token rule. Supabase auth is separate from ERP login.
 
 Before public rollout, strengthen backend login lockout/session revocation as discussed. Browser sign out currently removes the local token; it does not revoke an issued ERP JWT. No live business records have been submitted during scaffold verification.
