@@ -1,0 +1,118 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom';
+import { createApiClient } from './lib/api.js';
+
+const dateText = (value) => value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+function Feedback({ error }) { return error ? <div className="feedback" role="alert">{error.message || error}{error.correlationId && <small>Reference: {error.correlationId}</small>}</div> : null; }
+function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label>; }
+function Card({ title, children, action }) { return <section className="page-card"><header className="card-header"><h1>{title}</h1>{action}</header>{children}</section>; }
+
+export default function App() {
+  const [profile, setProfile] = useState(null);
+  const [notice, setNotice] = useState('');
+  const navigate = useNavigate();
+  const api = useMemo(() => createApiClient({ baseUrl: import.meta.env.VITE_API_BASE_URL || '/api', onUnauthorized: () => {
+    setProfile(null); setNotice('Your session has ended. Please sign in again.');
+  } }), []);
+  async function signedIn(result) {
+    if (!result?.token) throw new Error('The sign-in response did not include a session token.');
+    api.setToken(result.token);
+    try {
+      const employee = await api.profile();
+      if (!employee?.Id) throw new Error('The employee profile response was incomplete. Contact HR.');
+      setProfile(employee); setNotice(''); navigate('/profile');
+    }
+    catch (error) { api.clearToken(); throw error; }
+  }
+  function logout() { api.clearToken(); setProfile(null); setNotice(''); navigate('/login'); }
+  if (!profile) return <Login api={api} signedIn={signedIn} notice={notice} />;
+  return <div className="app-shell">
+    <aside className="sidebar"><a className="brand" href="/profile"><span className="brand-icon">S</span><span>Swift<span className="brand-sub">HR PORTAL</span></span></a>
+      <p className="nav-label">EMPLOYEE SELF-SERVICE</p><nav><NavLink to="/profile">My profile</NavLink><NavLink to="/leave">My leave</NavLink></nav>
+      <div className="sidebar-bottom"><span>{profile.CustomerFullName || 'Employee'}</span><button onClick={logout}>Sign out</button></div></aside>
+    <main><div className="topbar"><span>Welcome, {profile.CustomerIndividualFirstName || 'colleague'}</span><span className="status-dot">Employee portal</span></div>
+      <Routes><Route path="/profile" element={<Profile profile={profile} />} /><Route path="/leave" element={<Leave api={api} />} /><Route path="*" element={<Navigate to="/profile" replace />} /></Routes>
+    </main></div>;
+}
+
+function Login({ api, signedIn, notice }) {
+  const [username, setUsername] = useState(''); const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('');
+  const [initial, setInitial] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(null);
+  async function submit(event) {
+    event.preventDefault(); setBusy(true); setError(null);
+    try {
+      const result = initial ? await api.changeInitialPassword({ UserName: username, CurrentPassword: password, NewPassword: newPassword, ConfirmPassword: confirmPassword })
+        : await api.login({ UserName: username, Password: password });
+      if (result.requiresPasswordChange) { setInitial(true); return; }
+      await signedIn(result); setPassword(''); setNewPassword(''); setConfirmPassword('');
+    } catch (error) { setError(error); } finally { setBusy(false); }
+  }
+  return <div className="login-shell"><div className="login-intro"><div className="brand"><span className="brand-icon">S</span>Swift HR Portal</div><div><p className="eyebrow">YOUR WORK, IN ONE PLACE</p><h1>A little less admin.<br />More room for you.</h1><p>Keep up with your employee details and plan your time away.</p></div><small>Connected to Swift Financials</small></div>
+    <div className="login-panel"><form onSubmit={submit}><p className="eyebrow">EMPLOYEE SELF-SERVICE</p><h2>{initial ? 'Choose your password' : 'Welcome back'}</h2><p className="muted">{initial ? 'Replace your temporary password to continue.' : 'Sign in with your ERP account.'}</p>{notice && <p role="status">{notice}</p>}<Feedback error={error} />
+      <Field label="Username"><input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} disabled={busy || initial} /></Field>
+      <Field label={initial ? 'Temporary password' : 'Password'}><input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></Field>
+      {initial && <><Field label="New password"><input required type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></Field><Field label="Confirm new password"><input required type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></Field></>}
+      <button className="primary full" disabled={busy}>{busy ? 'Signing in…' : initial ? 'Change password and sign in' : 'Sign in'}</button><p className="help">Need an account or email confirmation? Contact your HR administrator.</p></form></div></div>;
+}
+
+function Profile({ profile }) {
+  const fields = [['Payroll number', profile.CustomerIndividualPayrollNumbers], ['Email', profile.CustomerAddressEmail], ['Mobile', profile.CustomerAddressMobileLine], ['Start date', dateText(profile.EmploymentStartDate)], ['Department', profile.DepartmentDescription], ['Designation', profile.DesignationDescription], ['Branch', profile.BranchDescription], ['Employment type', profile.EmployeeTypeDescription], ['NSSF number', profile.NationalSocialSecurityFundNumber], ['SHA / NHIF number', profile.NationalHospitalInsuranceFundNumber]];
+  return <Card title="My employee profile"><div className="profile-heading"><div className="avatar">{(profile.CustomerIndividualFirstName || profile.CustomerFullName || 'E').slice(0, 1)}</div><div><h2>{profile.CustomerFullName || 'Employee'}</h2><p className="muted">{profile.DesignationDescription || 'Your employment record'}</p></div></div><dl className="details-grid">{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>)}</dl><p className="help">To correct your employee details, contact HR.</p></Card>;
+}
+
+function Leave({ api }) {
+  const [page, setPage] = useState(0); const [data, setData] = useState(null); const [types, setTypes] = useState([]);
+  const [error, setError] = useState(null); const [loading, setLoading] = useState(true); const [revision, setRevision] = useState(0);
+  const [open, setOpen] = useState(false); const [busyId, setBusyId] = useState(null); const [success, setSuccess] = useState('');
+  useEffect(() => {
+    const abort = new AbortController(); setLoading(true); setError(null);
+    Promise.all([api.applications(page, { signal: abort.signal }), api.leaveTypes({ signal: abort.signal })])
+      .then(([applications, policies]) => { if (!abort.signal.aborted) { setData(applications); setTypes(policies); } })
+      .catch(e => { if (e.name !== 'AbortError') setError(e); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    return () => abort.abort();
+  }, [api, page, revision]);
+  async function withdraw(item) {
+    if (!window.confirm('Withdraw this pending leave request?')) return;
+    setBusyId(item.Id); setError(null);
+    try { await api.withdraw(item.Id); setSuccess('Leave request withdrawn.'); setRevision(x => x + 1); }
+    catch (error) { setError(error); } finally { setBusyId(null); }
+  }
+  return <Card title="My leave" action={<button className="primary" onClick={() => setOpen(true)} disabled={loading || !!error}>Request leave</button>}>
+    <p className="muted section-intro">Plan your time away and follow your requests.</p><Feedback error={error} />{success && <p className="success" role="status">{success}</p>}
+    {open && <LeaveForm api={api} types={types} onClose={() => setOpen(false)} onSaved={saved => { setOpen(false); setSuccess(saved.NotificationPending ? 'Request saved. The HR notification is pending.' : 'Leave request submitted.'); setPage(0); setRevision(x => x + 1); }} />}
+    <div className="list-wrapper"><div className="list-header"><span>Leave type</span><span>Dates</span><span>Status</span><span>Actions</span></div>
+      {loading ? <div className="empty" role="status">Loading your leave requests…</div> : error ? <div className="empty"><button onClick={() => setRevision(x => x + 1)}>Try again</button></div> : data?.PageCollection?.length ? data.PageCollection.map(item => <div className="list-row" key={item.Id}><div><strong>{item.LeaveTypeDescription}</strong><small>{item.Reason}</small></div><span>{dateText(item.Start)} – {dateText(item.End)}</span><span><span className={`badge status-${item.Status}`}>{item.StatusDescription || 'Unknown'}</span></span><div>{item.Status === 1 ? <button onClick={() => withdraw(item)} disabled={busyId === item.Id}>{busyId === item.Id ? 'Withdrawing…' : 'Withdraw'}</button> : '—'}</div></div>) : <div className="empty"><strong>No leave requests yet</strong><p>Your requests will appear here after you submit them.</p></div>}</div>
+    <div className="pagination"><button disabled={loading || page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, data?.TotalPages || 1)}</span><button disabled={loading || page + 1 >= (data?.TotalPages || 1)} onClick={() => setPage(x => x + 1)}>Next</button></div>
+  </Card>;
+}
+
+function LeaveForm({ api, types, onClose, onSaved }) {
+  const [form, setForm] = useState({ leaveTypeId: '', start: '', end: '', reason: '' });
+  const [preview, setPreview] = useState(null); const [error, setError] = useState(null); const [busy, setBusy] = useState(false); const [previewing, setPreviewing] = useState(false);
+  function set(field, value) { if (field !== 'reason') setPreview(null); setError(null); setForm(x => ({ ...x, [field]: value })); }
+  useEffect(() => {
+    setPreview(null);
+    if (!form.leaveTypeId || !form.start || !form.end || form.end < form.start) { setPreviewing(false); return; }
+    const abort = new AbortController(); setPreviewing(true);
+    const timer = setTimeout(() => api.preview({ leaveTypeId: form.leaveTypeId, start: form.start, end: form.end }, { signal: abort.signal })
+      .then(value => { if (!abort.signal.aborted) setPreview(value); }).catch(e => { if (e.name !== 'AbortError') setError(e); })
+      .finally(() => { if (!abort.signal.aborted) setPreviewing(false); }), 250);
+    return () => { clearTimeout(timer); abort.abort(); };
+  }, [api, form.leaveTypeId, form.start, form.end]);
+  async function submit(event) {
+    event.preventDefault(); if (!preview?.CanSubmit || previewing || busy) return;
+    setBusy(true); setError(null);
+    try { onSaved(await api.submitLeave(form)); } catch (error) { setError(error); } finally { setBusy(false); }
+  }
+  return <form className="request-form" onSubmit={submit}><div className="form-heading"><h2>Request leave</h2><button type="button" onClick={onClose} disabled={busy}>Close</button></div><Feedback error={error} /><div className="form-grid">
+    <Field label="Leave type"><select required value={form.leaveTypeId} onChange={e => set('leaveTypeId', e.target.value)} disabled={busy}><option value="">Select leave type</option>{types.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field>
+    <Field label="Start date"><input required type="date" min={localToday()} value={form.start} onChange={e => set('start', e.target.value)} disabled={busy} /></Field>
+    <Field label="End date"><input required type="date" min={form.start || localToday()} value={form.end} onChange={e => set('end', e.target.value)} disabled={busy} /></Field></div>
+    <Field label="Reason"><textarea required maxLength={256} rows={3} value={form.reason} onChange={e => set('reason', e.target.value)} disabled={busy} /></Field>
+    {previewing && <p role="status">Calculating your leave balance…</p>}{preview && <div className="balance-preview"><strong>{preview.RequestedDays} chargeable day(s)</strong>{preview.Error && <p role="alert">{preview.Error}</p>}{preview.Cycles.map((cycle, i) => <div key={i}><span>{dateText(cycle.Start)} – {dateText(cycle.End)}</span><p>Available: {cycle.Available} · Requested: {cycle.Requested} · Remaining: {cycle.Remaining}</p></div>)}</div>}
+    <button className="primary" disabled={busy || previewing || !preview?.CanSubmit}>{busy ? 'Submitting…' : 'Submit request'}</button>
+  </form>;
+}
