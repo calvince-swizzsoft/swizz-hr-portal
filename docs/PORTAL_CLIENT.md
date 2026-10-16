@@ -103,8 +103,8 @@ History page size is 10. Do not use application-list paging fields here.
 ERP permissions control real approvals/recalls. The processing methods require
 22017 for pending decisions and 22018 for the approved queue. With the optional
 leave-workflow migration, Supabase enforces equivalent development grants and
-self-approval prevention. Its processing UI is a separate intern deliverable;
-employee screens must not expose approval controls. See the
+self-approval prevention. The separately permission-gated processing inbox is
+not shown to employees without queue access. See the
 [workflow guide](LEAVE_WORKFLOW_GUIDE.md) for SQL and fixture limitations.
 
 ## Errors and limitations

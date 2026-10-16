@@ -65,9 +65,10 @@ sessions. Switch using `VITE_DATA_SOURCE=erp|supabase`, then restart/rebuild.
 | Tess | `processingApplication(id)` | GET `hr-portal/processing/leave-applications/{id}` |
 | Tess | `authorizeLeave(id,{decision,remarks})` | POST `hr-portal/processing/leave-applications/{id}/authorize` |
 
-All three processing client methods are now implemented in both adapters. The
-approval inbox UI remains Tess's work. Employee screens already exist and need
-the refinements and acceptance checks above. See [full client models](PORTAL_CLIENT.md).
+All three processing client methods are implemented in both adapters. The
+approval inbox is a separately permission-gated route; employee leave screens
+do not expose approval actions. Employee screens must continue to meet the
+refinements and acceptance checks above. See [full client models](PORTAL_CLIENT.md).
 
 ```js
 const request = await portalClient.submitLeave({

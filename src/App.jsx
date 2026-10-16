@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { createPortalClient } from './lib/portalClient.js';
 
@@ -20,6 +20,24 @@ function useLoad(load, dependencies) {
 }
 function LoadState({ state }) {
   return state.loading ? <div className="empty" role="status">Loading...</div> : state.error ? <><Feedback error={state.error} /><button onClick={state.retry}>Try again</button></> : null;
+}
+function useRefreshOnFocus(refresh) {
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+  useEffect(() => {
+    let lastRefresh = 0;
+    function refreshVisiblePage() {
+      if (document.visibilityState === 'hidden' || Date.now() - lastRefresh < 750) return;
+      lastRefresh = Date.now();
+      refreshRef.current();
+    }
+    window.addEventListener('focus', refreshVisiblePage);
+    document.addEventListener('visibilitychange', refreshVisiblePage);
+    return () => {
+      window.removeEventListener('focus', refreshVisiblePage);
+      document.removeEventListener('visibilitychange', refreshVisiblePage);
+    };
+  }, []);
 }
 export default function App() {
   const [profile, setProfile] = useState(null); const [notice, setNotice] = useState(''); const navigate = useNavigate();
@@ -62,9 +80,10 @@ function LeaveTypes({ api }) {
 function Leave({ api }) {
   const [page, setPage] = useState(0); const [open, setOpen] = useState(false); const [busyId, setBusyId] = useState(null); const [error, setError] = useState(null); const [success, setSuccess] = useState(''); const navigate = useNavigate();
   const state = useLoad(async signal => { const [applications, types] = await Promise.all([api.applications(page, { signal }), api.leaveTypes({ signal })]); return { applications, types }; }, [api, page]);
+  useRefreshOnFocus(state.retry);
   async function withdraw(item) { if (!window.confirm('Withdraw this pending leave request?')) return; setBusyId(item.Id); setError(null); try { await api.withdraw(item.Id); setSuccess('Leave request withdrawn.'); state.retry(); } catch (e) { setError(e); } finally { setBusyId(null); } }
   const data = state.data?.applications;
-  return <Card title="My leave" action={<button className="primary" onClick={() => setOpen(true)} disabled={!state.data}>Request leave</button>}><Feedback error={error} />{success && <p className="success" role="status">{success}</p>}<LoadState state={state} />
+  return <Card title="My leave" action={<div className="row-actions"><button onClick={state.retry} disabled={state.loading || !!busyId}>Refresh</button><button className="primary" onClick={() => setOpen(true)} disabled={!state.data}>Request leave</button></div>}><Feedback error={error} />{success && <p className="success" role="status">{success}</p>}<LoadState state={state} />
     {open && state.data && <LeaveForm api={api} types={state.data.types} onClose={() => setOpen(false)} onSaved={saved => { setOpen(false); setSuccess(saved.NotificationPending ? 'Request saved. The HR notification is pending.' : 'Leave request submitted.'); setPage(0); state.retry(); }} />}
     {data && <><div className="list-wrapper"><div className="list-header"><span>Leave type</span><span>Dates</span><span>Status</span><span>Actions</span></div>{data.PageCollection.length ? data.PageCollection.map(item => <div className="list-row" key={item.Id}><div><strong>{item.LeaveTypeDescription}</strong><small>{item.Reason}</small></div><span>{dateText(item.Start)} - {dateText(item.End)}</span><span className={`badge status-${item.Status}`}>{item.StatusDescription}</span><div className="row-actions"><button onClick={() => navigate(`/leave/${item.Id}`)}>View</button>{item.Status === 1 && <button disabled={!!busyId} onClick={() => withdraw(item)}>{busyId === item.Id ? 'Withdrawing...' : 'Withdraw'}</button>}</div></div>) : <div className="empty">No leave requests yet.</div>}</div><div className="pagination"><button disabled={page === 0 || !!busyId} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, data.TotalPages)}</span><button disabled={page + 1 >= data.TotalPages || !!busyId} onClick={() => setPage(x => x + 1)}>Next</button></div></>}
   </Card>;
@@ -72,12 +91,14 @@ function Leave({ api }) {
 function ApplicationDetail({ api }) {
   const { id } = useParams(); const [editing, setEditing] = useState(false); const navigate = useNavigate();
   const state = useLoad(async signal => ({ application: await api.application(id, { signal }), types: await api.leaveTypes({ signal }) }), [api, id]); const item = state.data?.application;
-  return <Card title="Leave application" action={<button onClick={() => navigate('/leave')}>Back</button>}><LoadState state={state} />{item && <>{editing ? <LeaveForm key={item.Id} api={api} types={state.data.types} application={item} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); state.retry(); }} /> : <><dl className="details-grid">{[['Leave type', item.LeaveTypeDescription], ['Status', item.StatusDescription], ['Start', dateText(item.Start)], ['End', dateText(item.End)], ['Reason', item.Reason], ['Decision remarks', item.AuthorizationRemarks], ['Recall remarks', item.RecallRemarks]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl>{item.Status === 1 && <button className="primary" onClick={() => setEditing(true)}>Edit application</button>}</>}</>}</Card>;
+  useRefreshOnFocus(state.retry);
+  return <Card title="Leave application" action={<div className="row-actions"><button onClick={state.retry} disabled={state.loading}>Refresh</button><button onClick={() => navigate('/leave')}>Back</button></div>}><LoadState state={state} />{item && <>{editing ? <LeaveForm key={item.Id} api={api} types={state.data.types} application={item} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); state.retry(); }} /> : <><dl className="details-grid">{[['Leave type', item.LeaveTypeDescription], ['Status', item.StatusDescription], ['Start', dateText(item.Start)], ['End', dateText(item.End)], ['Reason', item.Reason], ['Decision remarks', item.AuthorizationRemarks], ['Decision date', dateText(item.AuthorizedDate)], ['Recall remarks', item.RecallRemarks]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl>{item.Status === 1 && <button className="primary" onClick={() => setEditing(true)}>Edit application</button>}</>}</>}</Card>;
 }
 function Balances({ api }) {
   const [leaveTypeId, setType] = useState(''); const [asAt, setAsAt] = useState(today); const [page, setPage] = useState(0);
   const types = useLoad(signal => api.leaveTypes({ signal }), [api]); const state = useLoad(signal => leaveTypeId && asAt ? api.balances({ leaveTypeId, asAt, pageIndex: page }, { signal }) : null, [api, leaveTypeId, asAt, page]); const data = state.data;
-  return <Card title="Leave balances"><LoadState state={types} /><div className="form-grid"><Field label="Leave type"><select value={leaveTypeId} onChange={e => { setType(e.target.value); setPage(0); }}><option value="">Select leave type</option>{types.data?.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="As at"><input type="date" value={asAt} onChange={e => { setAsAt(e.target.value); setPage(0); }} /></Field></div>
+  useRefreshOnFocus(state.retry);
+  return <Card title="Leave balances" action={<button onClick={state.retry} disabled={!leaveTypeId || state.loading}>Refresh balance</button>}><LoadState state={types} /><div className="form-grid"><Field label="Leave type"><select value={leaveTypeId} onChange={e => { setType(e.target.value); setPage(0); }}><option value="">Select leave type</option>{types.data?.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="As at"><input type="date" value={asAt} onChange={e => { setAsAt(e.target.value); setPage(0); }} /></Field></div>
     {leaveTypeId && asAt ? <LoadState state={state} /> : <div className="empty">Select a leave type and date.</div>}{data && <><Feedback error={data.BalanceError} />{data.Balance && <dl className="details-grid">{['Entitlement', 'Used', 'Reserved', 'Available'].map(key => <div key={key}><dt>{key}</dt><dd>{data.Balance[key]}</dd></div>)}</dl>}<h2>Leave history</h2><div className="list-wrapper">{data.History.length ? data.History.map(item => <div className="list-row" key={item.Id}><span>{dateText(item.Start)} - {dateText(item.End)}</span><span>{item.Reason}</span><span>{({ 1: 'Pending', 2: 'Approved', 4: 'Rejected', 8: 'Recalled', 16: 'Withdrawn' })[item.Status] || 'Unknown'}</span><span>{item.ChargedDaysInYear} days</span></div>) : <div className="empty">No history for this period.</div>}</div><div className="pagination"><button disabled={page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, Math.ceil(data.HistoryCount / 10))}</span><button disabled={(page + 1) * 10 >= data.HistoryCount} onClick={() => setPage(x => x + 1)}>Next</button></div></>}</Card>;
 }
 function ProcessingNavigation({ api }) {
@@ -116,9 +137,20 @@ function ProcessingInbox({ api, profile }) {
 }
 function LeaveForm({ api, types, application, onClose, onSaved }) {
   const [form, setForm] = useState({ leaveTypeId: application?.LeaveTypeId || '', start: application?.Start?.slice(0, 10) || '', end: application?.End?.slice(0, 10) || '', reason: application?.Reason || '' }); const [busy, setBusy] = useState(false); const [error, setError] = useState(null);
-  const preview = useLoad(signal => !form.leaveTypeId || !form.start || !form.end || form.end < form.start ? null : api.preview({ leaveTypeId: form.leaveTypeId, start: form.start, end: form.end, ...(application ? { excludedId: application.Id } : {}) }, { signal }), [api, form.leaveTypeId, form.start, form.end, application?.Id]);
+  const invalidDates = !!form.start && !!form.end && form.end < form.start;
+  const preview = useLoad(signal => !form.leaveTypeId || !form.start || !form.end || invalidDates ? null : api.preview({ leaveTypeId: form.leaveTypeId, start: form.start, end: form.end, ...(application ? { excludedId: application.Id } : {}) }, { signal }), [api, form.leaveTypeId, form.start, form.end, application?.Id, invalidDates]);
+  useRefreshOnFocus(preview.retry);
   function set(field, value) { setError(null); setForm(current => ({ ...current, [field]: value })); }
-  async function submit(event) { event.preventDefault(); if (busy || preview.loading || !preview.data?.CanSubmit) return; setBusy(true); setError(null); try { onSaved(await (application ? api.updateLeave(application.Id, form) : api.submitLeave(form))); } catch (e) { setError(e); } finally { setBusy(false); } }
+  async function submit(event) {
+    event.preventDefault();
+    if (busy) return;
+    if (!form.reason.trim()) { setError(new Error('Enter a reason for this leave request.')); return; }
+    if (invalidDates || preview.loading || !preview.data?.CanSubmit) return;
+    setBusy(true); setError(null);
+    try { onSaved(await (application ? api.updateLeave(application.Id, form) : api.submitLeave(form))); }
+    catch (e) { setError(e); }
+    finally { setBusy(false); }
+  }
   return <form className="request-form" onSubmit={submit}><div className="form-heading"><h2>{application ? 'Edit leave' : 'Request leave'}</h2><button type="button" onClick={onClose} disabled={busy}>Close</button></div><Feedback error={error} /><div className="form-grid"><Field label="Leave type"><select required value={form.leaveTypeId} onChange={e => set('leaveTypeId', e.target.value)} disabled={busy}><option value="">Select leave type</option>{types.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="Start date"><input required type="date" value={form.start} onChange={e => set('start', e.target.value)} disabled={busy} /></Field><Field label="End date"><input required type="date" min={form.start} value={form.end} onChange={e => set('end', e.target.value)} disabled={busy} /></Field></div><Field label="Reason"><textarea required maxLength={256} rows={3} value={form.reason} onChange={e => set('reason', e.target.value)} disabled={busy} /></Field><LoadState state={preview} />
-    {preview.data && <div className="balance-preview"><strong>{preview.data.RequestedDays} chargeable day(s)</strong><Feedback error={preview.data.Error} />{preview.data.Cycles.map((cycle, i) => <div key={i}><span>{dateText(cycle.Start)} - {dateText(cycle.End)}</span><p>Available: {cycle.Available} | Requested: {cycle.Requested} | Remaining: {cycle.Remaining}</p></div>)}</div>}<button className="primary" disabled={busy || preview.loading || !preview.data?.CanSubmit}>{busy ? 'Saving...' : application ? 'Save changes' : 'Submit request'}</button></form>;
+    {invalidDates && <Feedback error="End date must be on or after the start date." />}{preview.data && <div className="balance-preview"><strong>{preview.data.RequestedDays} chargeable day(s)</strong><Feedback error={preview.data.Error} />{preview.data.Cycles.map((cycle, i) => <div key={i}><span>{dateText(cycle.Start)} - {dateText(cycle.End)}</span><p>Available: {cycle.Available} | Requested: {cycle.Requested} | Remaining: {cycle.Remaining}</p></div>)}</div>}<button className="primary" disabled={busy || invalidDates || preview.loading || !preview.data?.CanSubmit}>{busy ? 'Saving...' : application ? 'Save changes' : 'Submit request'}</button></form>;
 }
