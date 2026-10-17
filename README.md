@@ -72,6 +72,21 @@ through its dashboard; it does not simulate the ERP initial-password workflow.
 Balances and previews in Supabase are fixed scenarios, not live calculations.
 They do not change when requests are submitted or withdrawn. Unknown preview
 dates cannot be submitted; unknown balance scenarios return a clear error.
+The **Remaining** section summarizes, for every eligible leave type and a chosen
+as-at date, the entitlement, days taken, days pending and days remaining, using
+the existing balances operation (no browser calculation). In Supabase mode the
+figures come from balance fixtures, so only fixture dates such as `2027-01-10`
+show values; with the leave-workflow migration they switch as a request becomes
+pending, approved, rejected or withdrawn.
+
+Approver accounts: after sign-in the portal asks whether the user may read the
+pending processing queue (permission 22017). If so, the sidebar adds a
+**Leave approvals** section with **Approvals** next to the employee pages, and
+the user lands on Approvals after sign-in. Approvers never see their own requests
+in the queue; page counts still include them because the server counts them.
+Everyone else gets the employee pages without Approvals.
+This only selects screens; the ERP or development RPC enforces all permissions.
+
 Synthetic notifications are not sent. The **Approvals** section lists pending and
 approved leave and lets a permitted approver approve or reject with remarks. It
 uses the existing processing operations: permission (22017 pending, 22018
