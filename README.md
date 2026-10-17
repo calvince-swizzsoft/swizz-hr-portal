@@ -67,6 +67,11 @@ types, own application list/details, request submission, pending edits and
 withdrawal, balance/history and preview screens. Supabase passwords are managed
 through its dashboard; it does not simulate the ERP initial-password workflow.
 
+Both adapters now support contact-only `updateProfile` (email/mobile) matching
+ERP `PUT /api/hr-portal/me`. The main branch profile screen is still read-only;
+the separate profile-edit UI needs merging with the contact-only field list.
+See the client contract for validation, deployment and migration requirements.
+
 Balances and previews in Supabase are fixed scenarios, not live calculations.
 They do not change when requests are submitted or withdrawn. Unknown preview
 dates cannot be submitted; unknown balance scenarios return a clear error.

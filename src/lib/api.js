@@ -1,3 +1,5 @@
+import { pickProfileChanges } from './profileFields.js';
+
 export class ApiError extends Error {
   constructor(message, status = 0, correlationId = null) {
     super(message);
@@ -35,11 +37,17 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
   return {
     source: 'erp',
     loginLabel: 'Username',
+    canEditProfile: true,
     setToken(value) { token = value; },
     clearToken() { token = null; },
     login: (body) => request('auth/login', { method: 'POST', body, anonymous: true }),
     changeInitialPassword: (body) => request('auth/change-initial-password', { method: 'POST', body, anonymous: true }),
     profile: (options) => request('hr-portal/me', options),
+    async updateProfile(changes) {
+      let body;
+      try { body = pickProfileChanges(changes); } catch (error) { throw new ApiError(error.message, 400); }
+      return request('hr-portal/me', { method: 'PUT', body });
+    },
     leaveTypes: (options) => request('hr-portal/me/leave-types', options),
     applications: (pageIndex = 0, options) => request(`hr-portal/me/leave-applications?pageIndex=${pageIndex}&pageSize=20`, options),
     application: (id, options) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, options),

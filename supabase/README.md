@@ -1,5 +1,13 @@
 # Supabase development model
 
+Contact updates use the optional
+`migrations/20261021000000_profile_contact_self_service.sql` migration, applied
+after the mirror adapter. It permits only own email/mobile updates and replaces
+any earlier feature-branch profile function that allowed names. Run
+`tests/profile-contact.test.sql` in the synthetic project for rollback-only
+ownership and validation checks. Passwords/login email remain in Auth and are
+not changed by contact updates.
+
 For second-user approval/rejection and balance snapshots, follow the optional
 [leave workflow guide](../docs/LEAVE_WORKFLOW_GUIDE.md) after installing this base
 adapter. It includes the additional migration, seed and acceptance tests.
