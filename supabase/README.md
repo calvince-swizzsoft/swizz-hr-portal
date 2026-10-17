@@ -1,5 +1,13 @@
 # Supabase development model
 
+Contact updates use the optional
+`migrations/20261021000000_profile_contact_self_service.sql` migration, applied
+after the mirror adapter. It permits only own email/mobile updates and replaces
+any earlier feature-branch profile function that allowed names. Run
+`tests/profile-contact.test.sql` in the synthetic project for rollback-only
+ownership and validation checks. Passwords/login email remain in Auth and are
+not changed by contact updates.
+
 For second-user approval/rejection and balance snapshots, follow the optional
 [leave workflow guide](../docs/LEAVE_WORKFLOW_GUIDE.md) after installing this base
 adapter. It includes the additional migration, seed and acceptance tests.
@@ -36,6 +44,30 @@ If you already applied the earlier `20261017000000_portal_contract.sql`, simply
 apply the new migration. Its old `portal_dev_*` tables remain intact but unused.
 Do not delete them until any useful synthetic data has been reviewed. That
 superseded creation script is no longer part of the repository's setup.
+
+After applying the optional leave workflow migration, also apply
+`migrations/20261020000000_processing_queue_unlinked_rows.sql`. It excludes
+processing rows whose employee profile is missing from the actionable queue,
+reports their count, and prevents opening or deciding an unlinked request.
+
+### Integrated migration order
+
+Apply migrations in this order (skip already-applied versions):
+
+1. `20261018000000_existing_mirror_adapter.sql`
+2. `20261019000000_leave_workflow.sql`
+3. `20261020000000_processing_queue_unlinked_rows.sql`
+4. `20261020000001_profile_self_service.sql`
+5. `20261021000000_profile_contact_self_service.sql`
+
+The last migration enforces email/mobile-only updates. The earlier profile
+migration has been assigned a distinct version to avoid collision with the
+queue migration. If your project already recorded version `20261020000000`,
+inspect which of the two old branch scripts you applied: the version alone is
+ambiguous. Run the missing queue/profile script manually as appropriate, then
+the final contact-only migration; both old branch functions are replaceable.
+Do not delete migration history or rerun the base wrapper migration as a reset.
+No existing rows are deleted by these profile/queue upgrade scripts.
 
 ## Login using an existing employee
 

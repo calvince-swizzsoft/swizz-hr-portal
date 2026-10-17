@@ -18,6 +18,7 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `clearToken()` | None | void or promise; callers may await | Local session cleanup |
 | `changeInitialPassword(body)` | `{ UserName, CurrentPassword, NewPassword, ConfirmPassword }` | ERP login result; unsupported in synthetic mode | POST `auth/change-initial-password` |
 | `profile(options)` | None | EmployeeProfile | GET `hr-portal/me` |
+| `updateProfile(changes)` | Nonempty object containing CustomerAddressEmail and/or CustomerAddressMobileLine | Saved EmployeeProfile | PUT `hr-portal/me` |
 | `leaveTypes(options)` | None | LeaveType[] | GET `hr-portal/me/leave-types` |
 | `applications(pageIndex=0, options)` | Zero-based page, fixed pageSize 20 | ApplicationPage | GET `hr-portal/me/leave-applications` |
 | `application(id, options)` | Own application ID | LeaveApplication | GET `hr-portal/me/leave-applications/{id}` |
@@ -30,7 +31,9 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `processingApplication(id, options)` | Processing application ID | `{ Application, Preview }` | GET `hr-portal/processing/leave-applications/{id}` |
 | `authorizeLeave(id, body)` | `{ decision:'approve' or 'reject', remarks }` | Saved LeaveApplication | POST `hr-portal/processing/leave-applications/{id}/authorize` |
 
-`source` and `loginLabel` are presentation metadata. In Supabase mode login uses
+`source`, `loginLabel` and `canEditProfile` are presentation metadata; screens
+hide profile editing when `canEditProfile` is false. Both current adapters support
+contact-only editing. In Supabase mode login uses
 an Auth email; ERP accepts its normal username. Do not persist tokens in storage.
 No real credentials are supplied in code or seed SQL.
 
@@ -44,6 +47,35 @@ No real credentials are supplied in code or seed SQL.
 `EmployeeTypeDescription`, `EmployeeTypeCategoryDescription`,
 `NationalSocialSecurityFundNumber`, `NationalHospitalInsuranceFundNumber`.
 Employment descriptions, contacts, statutory numbers and optional IDs can be null.
+
+### Self service contact updates
+
+Both adapters support `updateProfile` and expose `canEditProfile=true`. Only
+`CustomerAddressEmail` and `CustomerAddressMobileLine` may be supplied. Names,
+employee IDs, payroll, statutory and employment fields are HR-controlled; extra
+fields cause 400 instead of being silently dropped. Values must be strings or
+null; omitted fields stay unchanged. Null or blank/whitespace clears the selected
+optional contact. The server trims strings. Email has a maximum length of 254
+and requires a non-whitespace local part and dotted domain. Mobile must match
+`^\+?[0-9 ()-]{7,20}$` after trimming.
+
+```js
+await portalClient.updateProfile({
+  CustomerAddressEmail: 'contact@example.test',
+  CustomerAddressMobileLine: '+254 700 123456',
+});
+```
+
+ERP updates the authenticated employee's linked customer address, preserves
+other address fields and records the modifying user/time. The employee and
+customer must exist and be unlocked. This does not change the login email,
+username, password, or send a notification. Supabase updates the linked mirror
+row via `portal_dev_update_profile` with the same field/validation contract.
+Apply `20261021000000_profile_contact_self_service.sql` after the mirror adapter.
+It also replaces the earlier feature-branch function that allowed name changes.
+Deploy the ERP assemblies before enabling an ERP editing UI against a hosted
+API. The integrated profile editor sends only the two shared
+PROFILE_EDITABLE_FIELDS, preserving HR-controlled names and identity.
 
 `LeaveType`: `Id`, `Description`, `Entitlement` (number), `IsAccrued` (boolean),
 `UnitType` (number), `UnitTypeDescription`, `ExcludeHolidays`, `ExcludeWeekends`.
@@ -72,6 +104,9 @@ not a substitute for current preview/balance requests.
 
 `ApplicationPage`: `PageIndex`, `PageSize`, `TotalCount`, `TotalPages`,
 `PageCollection` (LeaveApplication[]). Empty page: empty array, count/pages zero.
+The Supabase processing queue may additionally return `InvalidCount` for
+pending/approved mirror rows with no employee profile; those rows are excluded
+from actionable results and cannot be opened or decided.
 
 `LeavePreview`: `RequestedDays` (number), `CanSubmit` (boolean), `Error` (nullable
 string), `Cycles` (LeaveCycleBalance[]).
@@ -100,8 +135,8 @@ History page size is 10. Do not use application-list paging fields here.
 ERP permissions control real approvals/recalls. The processing methods require
 22017 for pending decisions and 22018 for the approved queue. With the optional
 leave-workflow migration, Supabase enforces equivalent development grants and
-self-approval prevention. Its processing UI is a separate intern deliverable;
-employee screens must not expose approval controls. See the
+self-approval prevention. The separately permission-gated processing inbox is
+not shown to employees without queue access. See the
 [workflow guide](LEAVE_WORKFLOW_GUIDE.md) for SQL and fixture limitations.
 
 ## Errors and limitations

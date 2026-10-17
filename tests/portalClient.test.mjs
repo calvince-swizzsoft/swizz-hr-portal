@@ -78,6 +78,36 @@ test('invalid source fails closed and ERP errors never call Supabase', async () 
   await assert.rejects(api.submitLeave({}),e=>e.status===503); assert.equal(supabase.calls.length,0);
 });
 
+test('Supabase profile edits send only self-service fields to the profile function', async () => {
+  const saved = { ...employee, CustomerAddressEmail: 'new@example.test' };
+  const supabase = fakeSupabase(() => ({ success: true, data: saved }));
+  const api = createPortalClient({ source: 'supabase', supabase });
+  await api.login({ UserName: 'employee.one@example.test', Password: 'test-only' });
+  assert.equal(api.canEditProfile, true);
+  await assert.rejects(api.updateProfile({ CustomerAddressEmail: 'new@example.test', Id: 'other', CustomerIndividualPayrollNumbers: 'P-9' }), e => e.status === 400);
+  assert.deepEqual(await api.updateProfile({ CustomerAddressEmail: 'new@example.test', CustomerAddressMobileLine: '' }), saved);
+  assert.deepEqual(supabase.calls[1], ['portal_dev_update_profile', { changes: { CustomerAddressEmail: 'new@example.test', CustomerAddressMobileLine: '' } }]);
+});
+
+test('Supabase profile validation errors and a missing profile function are reported safely', async () => {
+  const supabase = fakeSupabase(() => ({ success: false, status: 400, message: 'Enter a valid email address.', error: { code: 'PROFILE_VALIDATION_FAILED' } }));
+  const api = createPortalClient({ source: 'supabase', supabase });
+  await api.login({ UserName: 'employee.one@example.test', Password: 'test-only' });
+  await assert.rejects(api.updateProfile({ CustomerAddressEmail: 'bad' }), e => e instanceof ApiError && e.status === 400 && e.code === 'PROFILE_VALIDATION_FAILED' && /valid email/.test(e.message));
+  supabase.rpc = () => Promise.resolve({ data: null, status: 404, error: { code: 'PGRST202', message: 'Raw database details must stay hidden' } });
+  await assert.rejects(api.updateProfile({ CustomerAddressEmail: 'a@example.test' }), e => e.code === 'PGRST202' && /contact self-service migration/.test(e.message));
+});
+
+test('ERP mode enables contact editing against the own-profile endpoint', async () => {
+  const calls = [];
+  const api = createPortalClient({ source: 'erp', fetchImpl: async (...args) => { calls.push(args); return Response.json({ success: true, data: employee }); } });
+  assert.equal(api.canEditProfile, true);
+  assert.deepEqual(await api.updateProfile({ CustomerAddressEmail: 'new@example.test' }), employee);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], '/api/hr-portal/me');
+  assert.equal(calls[0][1].method, 'PUT');
+});
+
 test('Supabase setup failures report a safe actionable code without raw database details', async () => {
   const supabase = fakeSupabase();
   supabase.rpc = () => Promise.resolve({ data: null, status: 404, error: { code: 'PGRST202', message: 'Raw database details must stay hidden' } });
