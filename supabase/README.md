@@ -50,6 +50,25 @@ After applying the optional leave workflow migration, also apply
 processing rows whose employee profile is missing from the actionable queue,
 reports their count, and prevents opening or deciding an unlinked request.
 
+### Integrated migration order
+
+Apply migrations in this order (skip already-applied versions):
+
+1. `20261018000000_existing_mirror_adapter.sql`
+2. `20261019000000_leave_workflow.sql`
+3. `20261020000000_processing_queue_unlinked_rows.sql`
+4. `20261020000001_profile_self_service.sql`
+5. `20261021000000_profile_contact_self_service.sql`
+
+The last migration enforces email/mobile-only updates. The earlier profile
+migration has been assigned a distinct version to avoid collision with the
+queue migration. If your project already recorded version `20261020000000`,
+inspect which of the two old branch scripts you applied: the version alone is
+ambiguous. Run the missing queue/profile script manually as appropriate, then
+the final contact-only migration; both old branch functions are replaceable.
+Do not delete migration history or rerun the base wrapper migration as a reset.
+No existing rows are deleted by these profile/queue upgrade scripts.
+
 ## Login using an existing employee
 
 1. Create a confirmed email/password user in Supabase Authentication > Users,

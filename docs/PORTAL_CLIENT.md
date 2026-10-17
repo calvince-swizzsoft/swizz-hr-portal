@@ -31,7 +31,9 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `processingApplication(id, options)` | Processing application ID | `{ Application, Preview }` | GET `hr-portal/processing/leave-applications/{id}` |
 | `authorizeLeave(id, body)` | `{ decision:'approve' or 'reject', remarks }` | Saved LeaveApplication | POST `hr-portal/processing/leave-applications/{id}/authorize` |
 
-`source` and `loginLabel` are presentation metadata. In Supabase mode login uses
+`source`, `loginLabel` and `canEditProfile` are presentation metadata; screens
+hide profile editing when `canEditProfile` is false. Both current adapters support
+contact-only editing. In Supabase mode login uses
 an Auth email; ERP accepts its normal username. Do not persist tokens in storage.
 No real credentials are supplied in code or seed SQL.
 
@@ -72,8 +74,8 @@ row via `portal_dev_update_profile` with the same field/validation contract.
 Apply `20261021000000_profile_contact_self_service.sql` after the mirror adapter.
 It also replaces the earlier feature-branch function that allowed name changes.
 Deploy the ERP assemblies before enabling an ERP editing UI against a hosted
-API. The separate profile-editing feature branch still needs merging; update its
-field list to the two shared PROFILE_EDITABLE_FIELDS when integrating it.
+API. The integrated profile editor sends only the two shared
+PROFILE_EDITABLE_FIELDS, preserving HR-controlled names and identity.
 
 `LeaveType`: `Id`, `Description`, `Entitlement` (number), `IsAccrued` (boolean),
 `UnitType` (number), `UnitTypeDescription`, `ExcludeHolidays`, `ExcludeWeekends`.

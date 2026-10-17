@@ -53,7 +53,7 @@ export default function App() {
   return <div className="app-shell"><aside className="sidebar"><NavLink className="brand" to="/profile"><span className="brand-icon">S</span><span>Swift<span className="brand-sub">HR PORTAL</span></span></NavLink>
     <p className="nav-label">EMPLOYEE SELF-SERVICE</p><nav><NavLink to="/profile">My profile</NavLink><NavLink to="/leave">My leave</NavLink><NavLink to="/leave-types">Leave types</NavLink><NavLink to="/balances">Leave balances</NavLink></nav><ProcessingNavigation api={api} /><div className="sidebar-bottom"><span>{profile.CustomerFullName}</span><button onClick={logout}>Sign out</button></div></aside>
     <main><div className="topbar"><span>Welcome, {profile.CustomerIndividualFirstName || 'colleague'}</span><span className="status-dot">Employee portal</span></div><Routes>
-      <Route path="/profile" element={<Profile profile={profile} />} /><Route path="/leave" element={<Leave api={api} />} /><Route path="/leave-types" element={<LeaveTypes api={api} />} /><Route path="/leave/:id" element={<ApplicationDetail api={api} />} /><Route path="/balances" element={<Balances api={api} />} /><Route path="/processing/leave" element={<ProcessingInbox api={api} profile={profile} />} /><Route path="/applications" element={<Navigate to="/leave" replace />} /><Route path="*" element={<Navigate to="/profile" replace />} />
+      <Route path="/profile" element={<Profile api={api} profile={profile} onUpdated={setProfile} />} /><Route path="/leave" element={<Leave api={api} />} /><Route path="/leave-types" element={<LeaveTypes api={api} />} /><Route path="/leave/:id" element={<ApplicationDetail api={api} />} /><Route path="/balances" element={<Balances api={api} />} /><Route path="/processing/leave" element={<ProcessingInbox api={api} profile={profile} />} /><Route path="/applications" element={<Navigate to="/leave" replace />} /><Route path="*" element={<Navigate to="/profile" replace />} />
     </Routes></main></div>;
 }
 function Login({ api, signedIn, notice }) {
@@ -69,9 +69,22 @@ function Login({ api, signedIn, notice }) {
     {initial && <><Field label="New password"><input required type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} disabled={busy} /></Field><Field label="Confirm new password"><input required type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} disabled={busy} /></Field></>}
     <button className="primary full" disabled={busy}>{busy ? 'Signing in...' : initial ? 'Change password and sign in' : 'Sign in'}</button><p className="help">Need an account? Contact your HR administrator.</p></form></div></div>;
 }
-function Profile({ profile }) {
+function Profile({ api, profile, onUpdated }) {
+  const [editing, setEditing] = useState(false); const [success, setSuccess] = useState('');
   const fields = [['Payroll number', profile.CustomerIndividualPayrollNumbers], ['Email', profile.CustomerAddressEmail], ['Mobile', profile.CustomerAddressMobileLine], ['Start date', dateText(profile.EmploymentStartDate)], ['Department', profile.DepartmentDescription], ['Designation', profile.DesignationDescription], ['Branch', profile.BranchDescription], ['Employment type', profile.EmployeeTypeDescription], ['NSSF number', profile.NationalSocialSecurityFundNumber], ['SHA / NHIF number', profile.NationalHospitalInsuranceFundNumber]];
-  return <Card title="My employee profile"><div className="profile-heading"><div className="avatar">{(profile.CustomerIndividualFirstName || 'E').slice(0, 1)}</div><div><h2>{profile.CustomerFullName}</h2><p className="muted">{profile.DesignationDescription}</p></div></div><dl className="details-grid">{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl><p className="help">To correct your employee details, contact HR.</p></Card>;
+  const heading = <div className="profile-heading"><div className="avatar">{(profile.CustomerIndividualFirstName || 'E').slice(0, 1)}</div><div><h2>{profile.CustomerFullName}</h2><p className="muted">{profile.DesignationDescription}</p></div></div>;
+  if (editing) return <Card title="Edit my details">{heading}<ProfileForm api={api} profile={profile} onClose={() => setEditing(false)} onSaved={saved => { onUpdated(saved); setEditing(false); setSuccess('Your details were updated.'); }} /></Card>;
+  return <Card title="My employee profile" action={api.canEditProfile && <button onClick={() => { setSuccess(''); setEditing(true); }}>Edit my details</button>}>{success && <p className="success" role="status">{success}</p>}{heading}<dl className="details-grid">{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl><p className="help">{api.canEditProfile ? 'You can update your email and mobile. To change other details, contact HR.' : 'To correct your employee details, contact HR.'}</p></Card>;
+}
+function ProfileForm({ api, profile, onClose, onSaved }) {
+  const [form, setForm] = useState({ CustomerAddressEmail: profile.CustomerAddressEmail || '', CustomerAddressMobileLine: profile.CustomerAddressMobileLine || '' });
+  const [busy, setBusy] = useState(false); const [error, setError] = useState(null);
+  function set(field, value) { setError(null); setForm(current => ({ ...current, [field]: value })); }
+  async function submit(event) { event.preventDefault(); if (busy) return; setBusy(true); setError(null); try { onSaved(await api.updateProfile(form)); } catch (e) { setError(e); setBusy(false); } }
+  return <form className="request-form" onSubmit={submit}><div className="form-heading"><h2>Contact details</h2><button type="button" onClick={onClose} disabled={busy}>Cancel</button></div><Feedback error={error} /><div className="form-grid">
+    <Field label="Email"><input type="email" maxLength={254} autoComplete="email" value={form.CustomerAddressEmail} onChange={e => set('CustomerAddressEmail', e.target.value)} disabled={busy} /></Field>
+    <Field label="Mobile"><input type="tel" maxLength={20} autoComplete="tel" value={form.CustomerAddressMobileLine} onChange={e => set('CustomerAddressMobileLine', e.target.value)} disabled={busy} /></Field></div>
+    <button className="primary" disabled={busy}>{busy ? 'Saving...' : 'Save changes'}</button><p className="help">Leave email or mobile empty to clear it. Names, payroll, statutory and employment details are managed by HR.</p></form>;
 }
 function LeaveTypes({ api }) {
   const state = useLoad(signal => api.leaveTypes({ signal }), [api]);
@@ -80,7 +93,7 @@ function LeaveTypes({ api }) {
 function Leave({ api }) {
   const [page, setPage] = useState(0); const [open, setOpen] = useState(false); const [busyId, setBusyId] = useState(null); const [error, setError] = useState(null); const [success, setSuccess] = useState(''); const navigate = useNavigate();
   const state = useLoad(async signal => { const [applications, types] = await Promise.all([api.applications(page, { signal }), api.leaveTypes({ signal })]); return { applications, types }; }, [api, page]);
-  useRefreshOnFocus(state.retry);
+  useRefreshOnFocus(() => { if (!open) state.retry(); });
   async function withdraw(item) { if (!window.confirm('Withdraw this pending leave request?')) return; setBusyId(item.Id); setError(null); try { await api.withdraw(item.Id); setSuccess('Leave request withdrawn.'); state.retry(); } catch (e) { setError(e); } finally { setBusyId(null); } }
   const data = state.data?.applications;
   return <Card title="My leave" action={<div className="row-actions"><button onClick={state.retry} disabled={state.loading || !!busyId}>Refresh</button><button className="primary" onClick={() => setOpen(true)} disabled={!state.data}>Request leave</button></div>}><Feedback error={error} />{success && <p className="success" role="status">{success}</p>}<LoadState state={state} />
@@ -91,7 +104,7 @@ function Leave({ api }) {
 function ApplicationDetail({ api }) {
   const { id } = useParams(); const [editing, setEditing] = useState(false); const navigate = useNavigate();
   const state = useLoad(async signal => ({ application: await api.application(id, { signal }), types: await api.leaveTypes({ signal }) }), [api, id]); const item = state.data?.application;
-  useRefreshOnFocus(state.retry);
+  useRefreshOnFocus(() => { if (!editing) state.retry(); });
   return <Card title="Leave application" action={<div className="row-actions"><button onClick={state.retry} disabled={state.loading}>Refresh</button><button onClick={() => navigate('/leave')}>Back</button></div>}><LoadState state={state} />{item && <>{editing ? <LeaveForm key={item.Id} api={api} types={state.data.types} application={item} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); state.retry(); }} /> : <><dl className="details-grid">{[['Leave type', item.LeaveTypeDescription], ['Status', item.StatusDescription], ['Start', dateText(item.Start)], ['End', dateText(item.End)], ['Reason', item.Reason], ['Decision remarks', item.AuthorizationRemarks], ['Decision date', dateText(item.AuthorizedDate)], ['Recall remarks', item.RecallRemarks]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl>{item.Status === 1 && <button className="primary" onClick={() => setEditing(true)}>Edit application</button>}</>}</>}</Card>;
 }
 function Balances({ api }) {

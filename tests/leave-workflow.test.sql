@@ -36,7 +36,7 @@ begin
   assert (response#>>'{data,TotalCount}')::integer=1,response::text;
   assert (response#>>'{data,PageCollection,0,Id}')=saved_id,response::text;
   assert (public.portal_dev_request('processingApplication',jsonb_build_object('id','90000000-0000-4000-8000-000000000001'))->>'status')::integer=404;
-  assert (public.portal_dev_request('authorizeLeave',jsonb_build_object('id','90000000-0000-4000-8000-000000000001','decision','approve'))->>'status')::integer=400;
+  assert (public.portal_dev_request('authorizeLeave',jsonb_build_object('id','90000000-0000-4000-8000-000000000001','decision','approve'))->>'status')::integer=404;
   response:=public.portal_dev_request('processingApplication',jsonb_build_object('id',saved_id));
   assert response#>>'{data,Application,EmployeeId}'='10000000-0000-4000-8000-000000000001';
   response:=public.portal_dev_request('authorizeLeave',jsonb_build_object('id',saved_id,'decision','approve','remarks','Approved in test'));
