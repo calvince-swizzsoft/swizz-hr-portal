@@ -153,7 +153,7 @@ Both seeded employees receive leave type `20000000-0000-4000-8000-000000000001`.
 | Scenario | Selection | Expected result |
 | --- | --- | --- |
 | Profile | Sign in as either employee | Own synthetic profile only |
-| Balances | Annual leave, as-at `2027-01-10`, page 0 | Entitlement 21, used 3, available 18; one approved history row |
+| Balances | Annual leave, as-at `2027-01-10`, page 0 | Entitlement 21, used 3, available 18; one approved history row. The Supabase balance screen defaults to this fixture date. |
 | New request | `2027-01-11` to `2027-01-13` | 3 fixture days; allowed unless overlapping |
 | Pending edit | `2027-01-18` to `2027-01-19` | 2 fixture days |
 | Insufficient balance | `2027-02-01` to `2027-03-01` | CanSubmit false |

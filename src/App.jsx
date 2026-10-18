@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { createPortalClient } from './lib/portalClient.js';
 
 const dateText = value => value ? new Date(String(value).slice(0, 10) + 'T12:00:00').toLocaleDateString() : '\u2014';
@@ -17,6 +17,15 @@ function useLoad(load, dependencies) {
   }, [...dependencies, revision]);
   const current = loadedFor?.length === dependencies.length + 1 && [...dependencies, revision].every((value, index) => Object.is(value, loadedFor[index]));
   return { data: current ? data : null, error: current ? error : null, loading: loading || !current, retry: () => setRevision(x => x + 1) };
+}
+// Shows a message instead of a blank page when a screen fails to render; the sidebar stays usable.
+class ScreenErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return <Card title="Something went wrong"><div className="feedback" role="alert">This page could not be displayed. Try again, or contact support with the details below.<small>{String(this.state.error?.message || this.state.error)}</small></div><button onClick={() => { this.setState({ error: null }); this.props.onHome(); }}>{this.props.homeLabel || 'Back to my profile'}</button></Card>;
+  }
 }
 function LoadState({ state }) {
   return state.loading ? <div className="empty" role="status">Loading...</div> : state.error ? <><Feedback error={state.error} /><button onClick={state.retry}>Try again</button></> : null;
@@ -40,21 +49,31 @@ function useRefreshOnFocus(refresh) {
   }, []);
 }
 export default function App() {
-  const [profile, setProfile] = useState(null); const [notice, setNotice] = useState(''); const navigate = useNavigate();
-  const api = useMemo(() => createPortalClient({ source: import.meta.env.VITE_DATA_SOURCE || 'erp', baseUrl: import.meta.env.VITE_API_BASE_URL || '/api', supabaseUrl: import.meta.env.VITE_SUPABASE_URL, supabaseKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, onUnauthorized: () => { setProfile(null); setNotice('Your session has ended. Please sign in again.'); } }), []);
+  const [profile, setProfile] = useState(null); const [isApprover, setIsApprover] = useState(false); const [notice, setNotice] = useState(''); const navigate = useNavigate(); const { pathname } = useLocation();
+  const api = useMemo(() => createPortalClient({ source: import.meta.env.VITE_DATA_SOURCE || 'erp', baseUrl: import.meta.env.VITE_API_BASE_URL || '/api', supabaseUrl: import.meta.env.VITE_SUPABASE_URL, supabaseKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, onUnauthorized: () => { setProfile(null); setIsApprover(false); setNotice('Your session has ended. Please sign in again.'); } }), []);
   async function signedIn(result) {
     if (!result?.token) throw new Error('The sign-in response did not include a session token.');
     api.setToken(result.token);
-    try { const employee = await api.profile(); if (!employee?.Id) throw new Error('Employee profile is incomplete. Contact HR.'); setProfile(employee); setNotice(''); navigate('/profile'); }
+    try {
+      const employee = await api.profile(); if (!employee?.Id) throw new Error('Employee profile is incomplete. Contact HR.');
+      // Accounts allowed to read the pending queue (permission 22017) also get approval screens.
+      // This only chooses screens; the ERP or development RPC still enforces every permission. A failed check keeps the employee view.
+      const approver = await api.processingApplications({ status: 1, pageIndex: 0, pageSize: 1 }).then(() => true, error => { if (error.status === 401) throw error; return false; });
+      setIsApprover(approver); setProfile(employee); setNotice(''); navigate(approver ? '/approvals' : '/profile');
+    }
     catch (error) { await api.clearToken(); throw error; }
   }
-  async function logout() { setProfile(null); setNotice(''); navigate('/login'); await api.clearToken(); }
+  async function logout() { setProfile(null); setIsApprover(false); setNotice(''); navigate('/login'); await api.clearToken(); }
   if (!profile) return <Login api={api} signedIn={signedIn} notice={notice} />;
-  return <div className="app-shell"><aside className="sidebar"><NavLink className="brand" to="/profile"><span className="brand-icon">S</span><span>Swift<span className="brand-sub">HR PORTAL</span></span></NavLink>
-    <p className="nav-label">EMPLOYEE SELF-SERVICE</p><nav><NavLink to="/profile">My profile</NavLink><NavLink to="/leave">My leave</NavLink><NavLink to="/leave-types">Leave types</NavLink><NavLink to="/balances">Leave balances</NavLink></nav><ProcessingNavigation api={api} /><div className="sidebar-bottom"><span>{profile.CustomerFullName}</span><button onClick={logout}>Sign out</button></div></aside>
-    <main><div className="topbar"><span>Welcome, {profile.CustomerIndividualFirstName || 'colleague'}</span><span className="status-dot">Employee portal</span></div><Routes>
-      <Route path="/profile" element={<Profile api={api} profile={profile} onUpdated={setProfile} />} /><Route path="/leave" element={<Leave api={api} />} /><Route path="/leave-types" element={<LeaveTypes api={api} />} /><Route path="/leave/:id" element={<ApplicationDetail api={api} />} /><Route path="/balances" element={<Balances api={api} />} /><Route path="/processing/leave" element={<ProcessingInbox api={api} profile={profile} />} /><Route path="/applications" element={<Navigate to="/leave" replace />} /><Route path="*" element={<Navigate to="/profile" replace />} />
-    </Routes></main></div>;
+  const home = isApprover ? '/approvals' : '/profile';
+  return <div className="app-shell"><aside className="sidebar"><NavLink className="brand" to={home}><span className="brand-icon">S</span><span>Swift<span className="brand-sub">HR PORTAL</span></span></NavLink>
+    <p className="nav-label">EMPLOYEE SELF-SERVICE</p><nav><NavLink to="/profile">My profile</NavLink><NavLink to="/leave">My leave</NavLink><NavLink to="/leave-types">Leave types</NavLink><NavLink to="/balances">Leave balances</NavLink><NavLink to="/remaining">Remaining</NavLink></nav>
+    {isApprover && <><p className="nav-label">LEAVE APPROVALS</p><nav><NavLink to="/approvals">Approvals</NavLink></nav></>}
+    <div className="sidebar-bottom"><span>{profile.CustomerFullName}</span><button onClick={logout}>Sign out</button></div></aside>
+    <main><div className="topbar"><span>Welcome, {profile.CustomerIndividualFirstName || 'colleague'}</span><span className="status-dot">{isApprover ? 'Leave approver' : 'Employee portal'}</span></div><ScreenErrorBoundary key={pathname} onHome={() => navigate(home)} homeLabel={isApprover ? 'Back to approvals' : 'Back to my profile'}><Routes>
+      <Route path="/profile" element={<Profile api={api} profile={profile} onUpdated={setProfile} />} /><Route path="/leave" element={<Leave api={api} />} /><Route path="/leave-types" element={<LeaveTypes api={api} />} /><Route path="/leave-type" element={<LeaveTypes api={api} />} /><Route path="/processing/leave" element={<Navigate to="/approvals" replace />} /><Route path="/leave/:id" element={<ApplicationDetail api={api} />} /><Route path="/balances" element={<Balances api={api} />} /><Route path="/remaining" element={<Remaining api={api} />} /><Route path="/applications" element={<Navigate to="/leave" replace />} />
+      {isApprover && <><Route path="/approvals" element={<Approvals api={api} profile={profile} />} /><Route path="/approvals/:id" element={<ApprovalReview api={api} profile={profile} />} /></>}<Route path="*" element={<Navigate to={home} replace />} />
+    </Routes></ScreenErrorBoundary></main></div>;
 }
 function Login({ api, signedIn, notice }) {
   const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [newPassword, setNewPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('');
@@ -88,7 +107,8 @@ function ProfileForm({ api, profile, onClose, onSaved }) {
 }
 function LeaveTypes({ api }) {
   const state = useLoad(signal => api.leaveTypes({ signal }), [api]);
-  return <Card title="Leave types"><LoadState state={state} />{state.data && <div className="list-wrapper">{state.data.length ? state.data.map(type => <div className="list-row type-row" key={type.Id}><strong>{type.Description}</strong><span>{type.Entitlement} {type.UnitTypeDescription}</span></div>) : <div className="empty">No leave types available.</div>}</div>}</Card>;
+  const navigate = useNavigate();
+  return <Card title="Leave types"><LoadState state={state} />{state.data && <div className="list-wrapper">{state.data.length ? state.data.map(type => <div className="list-row type-row" key={type.Id}><strong>{type.Description}</strong><span>{type.Entitlement} {type.UnitTypeDescription}</span><button onClick={() => navigate(`/balances?leaveTypeId=${encodeURIComponent(type.Id)}`)}>View balance</button></div>) : <div className="empty">No leave types available.</div>}</div>}</Card>;
 }
 function Leave({ api }) {
   const [page, setPage] = useState(0); const [open, setOpen] = useState(false); const [busyId, setBusyId] = useState(null); const [error, setError] = useState(null); const [success, setSuccess] = useState(''); const navigate = useNavigate();
@@ -108,44 +128,91 @@ function ApplicationDetail({ api }) {
   return <Card title="Leave application" action={<div className="row-actions"><button onClick={state.retry} disabled={state.loading}>Refresh</button><button onClick={() => navigate('/leave')}>Back</button></div>}><LoadState state={state} />{item && <>{editing ? <LeaveForm key={item.Id} api={api} types={state.data.types} application={item} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); state.retry(); }} /> : <><dl className="details-grid">{[['Leave type', item.LeaveTypeDescription], ['Status', item.StatusDescription], ['Start', dateText(item.Start)], ['End', dateText(item.End)], ['Reason', item.Reason], ['Decision remarks', item.AuthorizationRemarks], ['Decision date', dateText(item.AuthorizedDate)], ['Recall remarks', item.RecallRemarks]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl>{item.Status === 1 && <button className="primary" onClick={() => setEditing(true)}>Edit application</button>}</>}</>}</Card>;
 }
 function Balances({ api }) {
-  const [leaveTypeId, setType] = useState(''); const [asAt, setAsAt] = useState(today); const [page, setPage] = useState(0);
+  const [searchParams] = useSearchParams(); const [leaveTypeId, setType] = useState(() => searchParams.get('leaveTypeId') || ''); const [asAt, setAsAt] = useState(() => api.source === 'supabase' ? '2027-01-10' : today()); const [page, setPage] = useState(0);
   const types = useLoad(signal => api.leaveTypes({ signal }), [api]); const state = useLoad(signal => leaveTypeId && asAt ? api.balances({ leaveTypeId, asAt, pageIndex: page }, { signal }) : null, [api, leaveTypeId, asAt, page]); const data = state.data;
   useRefreshOnFocus(state.retry);
   return <Card title="Leave balances" action={<button onClick={state.retry} disabled={!leaveTypeId || state.loading}>Refresh balance</button>}><LoadState state={types} /><div className="form-grid"><Field label="Leave type"><select value={leaveTypeId} onChange={e => { setType(e.target.value); setPage(0); }}><option value="">Select leave type</option>{types.data?.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="As at"><input type="date" value={asAt} onChange={e => { setAsAt(e.target.value); setPage(0); }} /></Field></div>
     {leaveTypeId && asAt ? <LoadState state={state} /> : <div className="empty">Select a leave type and date.</div>}{data && <><Feedback error={data.BalanceError} />{data.Balance && <dl className="details-grid">{['Entitlement', 'Used', 'Reserved', 'Available'].map(key => <div key={key}><dt>{key}</dt><dd>{data.Balance[key]}</dd></div>)}</dl>}<h2>Leave history</h2><div className="list-wrapper">{data.History.length ? data.History.map(item => <div className="list-row" key={item.Id}><span>{dateText(item.Start)} - {dateText(item.End)}</span><span>{item.Reason}</span><span>{({ 1: 'Pending', 2: 'Approved', 4: 'Rejected', 8: 'Recalled', 16: 'Withdrawn' })[item.Status] || 'Unknown'}</span><span>{item.ChargedDaysInYear} days</span></div>) : <div className="empty">No history for this period.</div>}</div><div className="pagination"><button disabled={page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, Math.ceil(data.HistoryCount / 10))}</span><button disabled={(page + 1) * 10 >= data.HistoryCount} onClick={() => setPage(x => x + 1)}>Next</button></div></>}</Card>;
 }
-function ProcessingNavigation({ api }) {
-  const state = useLoad(signal => api.processingApplications({ status: 1, pageIndex: 0, pageSize: 1 }, { signal }), [api]);
-  if (state.loading || state.error?.status === 403 || !state.error && !state.data) return null;
-  if (state.error) return <Feedback error={state.error} />;
-  return <><p className="nav-label">LEAVE PROCESSING</p><nav><NavLink to="/processing/leave">Approval inbox</NavLink></nav></>;
+// Summary of days remaining per eligible leave type, read from the balances operation; nothing is calculated here.
+function Remaining({ api }) {
+  const [asAt, setAsAt] = useState(() => api.source === 'supabase' ? '2027-01-10' : today());
+  const state = useLoad(async signal => {
+    if (!asAt) return null;
+    const types = await api.leaveTypes({ signal });
+    return Promise.all((Array.isArray(types) ? types : []).map(async type => {
+      // One leave type without a balance for this date must not hide the others.
+      try { return { type, statistics: await api.balances({ leaveTypeId: type.Id, asAt, pageIndex: 0 }, { signal }) }; }
+      catch (error) { if (error.name === 'AbortError' || error.status === 401) throw error; return { type, error }; }
+    }));
+  }, [api, asAt]);
+  useRefreshOnFocus(state.retry);
+  const number = value => value == null || value === '' || Number.isNaN(Number(value)) ? '—' : Number(value);
+  return <Card title="Remaining leave" action={<button onClick={state.retry} disabled={!asAt || state.loading}>Refresh</button>}><p className="muted section-intro">Days you have left for each leave type. Pending requests are already deducted; the figures update after a request is approved, rejected or withdrawn.</p>
+    <div className="form-grid"><Field label="As at"><input type="date" required value={asAt} onChange={e => setAsAt(e.target.value)} /></Field></div>
+    {!asAt ? <div className="empty">Select a date.</div> : <LoadState state={state} />}
+    {state.data && <div className="list-wrapper"><div className="list-header remaining-row"><span>Leave type</span><span>Entitlement</span><span>Taken</span><span>Pending</span><span>Days remaining</span></div>
+      {state.data.length ? state.data.map(({ type, statistics, error }) => {
+        const balance = statistics?.Balance; const remaining = balance?.Remaining ?? balance?.Available;
+        return <div className="list-row remaining-row" key={type.Id}><div><strong>{type.Description}</strong><small>{type.UnitTypeDescription}</small></div>
+          {balance ? <><span><small>Entitlement</small>{number(balance.Entitlement)}</span><span><small>Taken</small>{number(balance.Used)}</span><span><small>Pending</small>{number(balance.Reserved)}</span>
+            <span className={`remaining-days${remaining <= 0 ? ' none' : remaining <= 3 ? ' low' : ''}`}>{number(remaining)}<small>day(s) remaining</small></span></>
+            : <div className="remaining-missing"><strong>No balance available for this date.</strong><small>{statistics?.BalanceError || error?.message}</small></div>}</div>;
+      }) : <div className="empty">No leave types available.</div>}</div>}
+  </Card>;
 }
-function ProcessingInbox({ api, profile }) {
-  const [status, setStatus] = useState(1); const [page, setPage] = useState(0); const [selectedId, setSelectedId] = useState(null);
-  const [remarks, setRemarks] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(null); const [success, setSuccess] = useState('');
-  const queue = useLoad(signal => api.processingApplications({ status, pageIndex: page, pageSize: 20 }, { signal }), [api, status, page]);
-  const detail = useLoad(signal => selectedId ? api.processingApplication(selectedId, { signal }) : null, [api, selectedId]);
-  const application = detail.data?.Application;
-  const isOwnRequest = application?.EmployeeId === profile.Id;
-  function showQueue(nextStatus) { setStatus(nextStatus); setPage(0); setSelectedId(null); setRemarks(''); setError(null); setSuccess(''); }
+function PreviewSummary({ preview }) {
+  return <div className="balance-preview"><strong>{preview.RequestedDays ?? 0} chargeable day(s)</strong><Feedback error={preview.Error} />{(Array.isArray(preview.Cycles) ? preview.Cycles : []).map((cycle, i) => <div key={i}><span>{dateText(cycle.Start)} - {dateText(cycle.End)}</span><p>Available: {cycle.Available} | Requested: {cycle.Requested} | Remaining: {cycle.Remaining}</p></div>)}</div>;
+}
+// Processing permission is checked by the ERP or development RPC; a 403 shows no records and no permission toggle.
+// A reply without the expected fields usually means the Supabase project lacks the leave-workflow migration.
+const unexpectedProcessingReply = 'The approvals service returned incomplete request details. Refresh or contact HR.';
+function ProcessingDenied({ status }) {
+  return <div className="empty" role="alert"><strong>You don't have permission to {status === 2 ? 'view approved leave' : 'review leave requests'}.</strong><p>Ask HR if you need approval access.</p></div>;
+}
+function Approvals({ api, profile }) {
+  const [status, setStatus] = useState(1); const [page, setPage] = useState(0); const navigate = useNavigate(); const notice = useLocation().state?.notice;
+  const state = useLoad(signal => api.processingApplications({ status, pageIndex: page, pageSize: 20 }, { signal }), [api, status, page]);
+  useRefreshOnFocus(state.retry);
+  const received = Array.isArray(state.data?.PageCollection) ? state.data.PageCollection : null; const totalPages = Math.max(1, Number(state.data?.TotalPages) || 1);
+  // The development queue returns null for applications whose employee_erp_id matches no employee record; skip them.
+  const linked = received?.filter(item => item && typeof item === 'object' && item.Id); const hidden = received ? received.length - linked.length + (Number(state.data?.InvalidCount) || 0) : 0;
+  // An approver cannot decide their own requests, so they are left out of their queue.
+  const rows = linked?.filter(item => item.EmployeeId !== profile.Id); const own = linked ? linked.length - rows.length : 0;
+  function show(next) { setStatus(next); setPage(0); }
+  return <Card title="Approvals" action={<button onClick={state.retry} disabled={state.loading}>Refresh</button>}><p className="muted section-intro">Review employees' leave requests and see leave that has been approved.</p>{notice && <p className="success" role="status">{notice}</p>}
+    {own > 0 && <p className="help" role="status">Your own requests are hidden here. Another approver reviews them.</p>}
+    <div className="tabs"><button aria-pressed={status === 1} onClick={() => show(1)}>Pending</button><button aria-pressed={status === 2} onClick={() => show(2)}>Approved</button></div>
+    {state.error?.status === 403 ? <ProcessingDenied status={status} /> : <LoadState state={state} />}
+    {state.data && !rows && <Feedback error={unexpectedProcessingReply} />}
+    {hidden > 0 && <p className="help" role="status">{hidden === 1 ? '1 request on this page couldn\'t be shown because it isn\'t' : `${hidden} requests on this page couldn't be shown because they aren't`} linked to an employee record. Ask HR to check {hidden === 1 ? 'it' : 'them'}.</p>}
+    {rows && <><div className="list-wrapper"><div className="list-header"><span>Employee</span><span>Leave type</span><span>Dates</span><span>{status === 1 ? 'Actions' : 'Decision'}</span></div>{rows.length ? rows.map(item => <div className="list-row" key={item.Id}><div><strong>{item.EmployeeName || 'Employee'}</strong></div><div><strong>{item.LeaveTypeDescription}</strong><small>{item.Reason}</small></div><span>{dateText(item.Start)} - {dateText(item.End)}</span>
+      {status === 1 ? <div className="row-actions"><button onClick={() => navigate(`/approvals/${item.Id}`)}>Review</button></div> : <div><span className="badge status-2">Approved</span><small>{dateText(item.AuthorizedDate)}{item.AuthorizationRemarks ? ` | ${item.AuthorizationRemarks}` : ''}</small><div className="row-actions"><button onClick={() => navigate(`/approvals/${item.Id}`)}>View</button></div></div>}</div>) : <div className="empty">{status === 1 ? 'No leave requests are waiting for approval.' : 'No approved leave yet.'}</div>}</div>
+      <div className="pagination"><button disabled={page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {totalPages}</span><button disabled={page + 1 >= totalPages} onClick={() => setPage(x => x + 1)}>Next</button></div></>}
+  </Card>;
+}
+function ApprovalReview({ api, profile }) {
+  const { id } = useParams(); const navigate = useNavigate();
+  const [remarks, setRemarks] = useState(''); const [busy, setBusy] = useState(null); const [error, setError] = useState(null);
+  const state = useLoad(signal => api.processingApplication(id, { signal }), [api, id]); const item = state.data?.Application; const preview = state.data?.Preview;
+  // Usability only: the ERP and development RPC also reject self-approval.
+  const own = item?.EmployeeId === profile.Id;
+  useRefreshOnFocus(() => { if (!busy) state.retry(); });
   async function decide(decision) {
-    if (!application || isOwnRequest || busy) return;
-    setBusy(true); setError(null); setSuccess('');
-    try {
-      await api.authorizeLeave(application.Id, { decision, remarks });
-      setSuccess(`Request ${decision === 'approve' ? 'approved' : 'rejected'}.`);
-      setSelectedId(null); setRemarks(''); queue.retry();
-    } catch (e) { setError(e); }
-    finally { setBusy(false); }
+    if (!item?.Id || own || item.Status !== 1 || busy || !window.confirm(decision === 'approve' ? 'Approve this leave request?' : 'Reject this leave request?')) return;
+    setBusy(decision); setError(null);
+    try { await api.authorizeLeave(item.Id, { decision, remarks: remarks.trim() }); navigate('/approvals', { state: { notice: decision === 'approve' ? 'Leave request approved.' : 'Leave request rejected.' } }); }
+    catch (e) { setError(e); setBusy(null); }
   }
-  const data = queue.data;
-  const pageCollection = Array.isArray(data?.PageCollection) ? data.PageCollection : [];
-  const applications = pageCollection.filter(item => item && typeof item === 'object' && item.Id);
-  const invalidApplicationCount = pageCollection.length - applications.length + (Number(data?.InvalidCount) || 0);
-  return <Card title="Leave approval inbox" action={<div className="row-actions"><button className={status === 1 ? 'primary' : ''} onClick={() => showQueue(1)}>Pending</button><button className={status === 2 ? 'primary' : ''} onClick={() => showQueue(2)}>Approved</button><button onClick={() => selectedId ? detail.retry() : queue.retry()}>{selectedId ? 'Refresh details' : 'Refresh'}</button></div>}>
-    {success && <p className="success" role="status">{success}</p>}
-    <Feedback error={error} />
-    {selectedId ? <><button onClick={() => { setSelectedId(null); setRemarks(''); setError(null); }}>Back to inbox</button><LoadState state={detail} />{detail.data && !application && <Feedback error="The processing service returned incomplete request details. Refresh the inbox or contact HR." />}{application && <><dl className="details-grid">{[['Employee', application.EmployeeName], ['Leave type', application.LeaveTypeDescription], ['Status', application.StatusDescription], ['Start', dateText(application.Start)], ['End', dateText(application.End)], ['Reason', application.Reason]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl><h2>Request preview</h2>{detail.data.Preview?.Error && <Feedback error={detail.data.Preview.Error} />}{detail.data.Preview && <div className="balance-preview"><strong>{detail.data.Preview.RequestedDays} requested day(s)</strong>{detail.data.Preview.Cycles?.map((cycle, index) => <div key={index}><span>{dateText(cycle.Start)} - {dateText(cycle.End)}</span><p>Available: {cycle.Available} | Requested: {cycle.Requested} | Remaining: {cycle.Remaining}</p></div>)}</div>}{status === 1 && application.Status === 1 && (isOwnRequest ? <p className="feedback" role="alert">You cannot approve or reject your own request.</p> : <><Field label="Decision remarks (optional, up to 256 characters)"><textarea rows={3} maxLength={256} value={remarks} onChange={event => setRemarks(event.target.value)} disabled={busy} /></Field><div className="row-actions"><button className="primary" onClick={() => decide('approve')} disabled={busy}>{busy ? 'Saving...' : 'Approve'}</button><button className="danger" onClick={() => decide('reject')} disabled={busy}>{busy ? 'Saving...' : 'Reject'}</button></div></>)}</>}</> : <><LoadState state={queue} />{data && <>{invalidApplicationCount > 0 && <p className="feedback" role="alert">{invalidApplicationCount} request record(s) were returned without required details and could not be displayed. Please contact HR to check the processing data.</p>}{!Array.isArray(data.PageCollection) && <p className="feedback" role="alert">The processing service returned an invalid request list. Refresh or contact HR.</p>}<div className="list-wrapper"><div className="list-header processing-grid"><span>Employee</span><span>Leave type</span><span>Dates</span><span>Status</span><span>Details</span></div>{applications.length ? applications.map(item => <div className="list-row processing-grid" key={item.Id}><strong>{item.EmployeeName || 'Employee'}</strong><span>{item.LeaveTypeDescription || '\u2014'}</span><span>{dateText(item.Start)} - {dateText(item.End)}</span><span className={`badge status-${item.Status}`}>{item.StatusDescription || 'Unknown status'}</span><button onClick={() => { setSelectedId(item.Id); setRemarks(''); setError(null); }}>View</button></div>) : <div className="empty">No {status === 1 ? 'pending' : 'approved'} requests.</div>}</div><div className="pagination"><button disabled={page === 0} onClick={() => setPage(value => value - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, data.TotalPages || 0)}</span><button disabled={page + 1 >= Math.max(1, data.TotalPages || 0)} onClick={() => setPage(value => value + 1)}>Next</button></div></>}</>}
+  const details = item && [['Employee', item.EmployeeName], ['Leave type', item.LeaveTypeDescription], ['Status', item.StatusDescription], ['Start', dateText(item.Start)], ['End', dateText(item.End)], ['Requested on', dateText(item.CreatedDate)], ['Reason', item.Reason],
+    ...(item.Status === 1 ? [] : [['Decision remarks', item.AuthorizationRemarks], ['Decision date', dateText(item.AuthorizedDate)]])];
+  return <Card title={item?.Status === 1 ? 'Review leave request' : 'Leave decision'} action={<button onClick={() => navigate('/approvals')} disabled={!!busy}>Back</button>}>
+    {state.error?.status === 403 ? <ProcessingDenied /> : <LoadState state={state} />}
+    {state.data && !item && <Feedback error={unexpectedProcessingReply} />}
+    {item && <><dl className="details-grid">{details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>)}</dl>{preview && <><h2>Balance preview</h2><PreviewSummary preview={preview} /></>}
+      {item.Status === 1 && (own ? <p className="help" role="status">You can't approve or reject your own request. Another approver must decide it.</p>
+        : <div className="request-form"><Feedback error={error} /><Field label="Remarks (optional)"><textarea maxLength={256} rows={3} value={remarks} onChange={e => { setError(null); setRemarks(e.target.value); }} disabled={!!busy} /></Field>
+          <div className="row-actions"><button className="primary" onClick={() => decide('approve')} disabled={!!busy}>{busy === 'approve' ? 'Approving...' : 'Approve'}</button><button className="danger" onClick={() => decide('reject')} disabled={!!busy}>{busy === 'reject' ? 'Rejecting...' : 'Reject'}</button></div></div>)}</>}
   </Card>;
 }
 function LeaveForm({ api, types, application, onClose, onSaved }) {
