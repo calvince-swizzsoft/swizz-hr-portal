@@ -62,13 +62,13 @@ The employee self-service screens and leave approval inbox use the shared
 portal client. Processing access and decisions are enforced by the ERP or the
 synthetic Supabase development RPC; the UI does not grant approval permissions.
 
-Included: login, ERP initial-password change, profile with own email/mobile
-editing in both data sources, eligible leave
-types, own application list/details, request submission, pending edits and
-withdrawal, balance/history and preview screens, and a pending/approved leave
-processing inbox with request details and approve/reject actions. Supabase
-passwords are managed through its dashboard; it does not simulate the ERP
-initial-password workflow.
+Included: login, ERP initial-password change, contact-only profile editing in both
+data sources, eligible leave types, own application list showing leave type,
+dates and status, request submission, withdrawal of pending requests,
+balance/history and preview screens, and pending/approved approvals with details
+and decisions. The employee details/edit page is hidden; withdraw a pending
+request and request again instead. Supabase passwords are managed through its
+dashboard; it does not simulate the ERP initial-password workflow.
 
 Both adapters now support contact-only `updateProfile` (email/mobile) matching
 ERP `PUT /api/hr-portal/me`. Names and employment details remain HR-controlled.
@@ -77,11 +77,13 @@ See the client contract for validation, deployment and migration requirements.
 
 Balances and previews in Supabase use fixed scenarios, not live calculations.
 The workflow migration selects predefined balance snapshots on request/decision
-changes; preview fixtures remain fixed. Unknown preview
+changes; preview fixtures remain fixed. Approvers can edit or add employee balance fixtures from approval details after applying the fixture migrations; employees cannot edit fixtures, and fixture edits never update ERP data. Unknown preview
 dates cannot be submitted; unknown balance scenarios return a clear error.
 The **Remaining** section summarizes, for every eligible leave type and a chosen
 as-at date, the entitlement, days taken, days pending and days remaining, using
-the existing balances operation (no browser calculation). In Supabase mode the
+the existing balances operation (no browser calculation). A summary box adds up
+the remaining and pending days shown; each type is labelled running low at 3 or
+fewer days and "none left" at 0. In Supabase mode the
 figures come from balance fixtures, so only fixture dates such as `2027-01-10`
 show values; with the leave-workflow migration they switch as a request becomes
 pending, approved, rejected or withdrawn.

@@ -205,6 +205,12 @@ after seeding in the synthetic project. They roll back all test writes, includin
 temporary resets and permissions. Tests include rollback of a decision when its
 balance fixture is incomplete. Do not run them against live employee records.
 
+In Supabase mode, a user with the appropriate processing permission can edit or
+add the target employee's balance fixture from request details. Employees cannot
+edit fixtures. Permission 22017 is required for a pending request and 22018 for
+an approved request. The selected application determines which employee/type
+can be changed; fixture changes remain synthetic and do not alter ERP balances.
+
 ## Merge responsibilities
 
 Dinah owns employee screens; Tess owns processing screens. Coordinate changes

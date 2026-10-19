@@ -29,6 +29,7 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `withdraw(id)` | Own pending ID | Saved LeaveApplication | POST `hr-portal/me/leave-applications/{id}/withdraw` |
 | `processingApplications(query, options)` | `{ status:1 or 2, pageIndex:0, pageSize:20 }` | ApplicationPage; permission checked server-side | GET `hr-portal/processing/leave-applications` |
 | `processingApplication(id, options)` | Processing application ID | `{ Application, Preview }` | GET `hr-portal/processing/leave-applications/{id}` |
+| `processingBalanceFixture(args, options)` | `{ action:'get' or 'save', applicationId, asAt, pageIndex, Entitlement?, Used?, Reserved?, Available?, CycleStart?, CycleEnd? }` | EmployeeLeaveStatistics fixture; processing permission required, Supabase development only | None |
 | `authorizeLeave(id, body)` | `{ decision:'approve' or 'reject', remarks }` | Saved LeaveApplication | POST `hr-portal/processing/leave-applications/{id}/authorize` |
 
 `source`, `loginLabel` and `canEditProfile` are presentation metadata; screens
@@ -149,10 +150,21 @@ transport failures are sanitized; unexpected SQL failures are not shown raw.
 
 Synthetic fixtures do not recalculate balances, apply calendar rules, accrue
 entitlements, enqueue notifications or prove approval availability. Known preview
-scenarios can be submitted; unknown ones have `CanSubmit=false`. Writes check
-ownership, eligibility, pending status, reason/date formats and overlap. Balance
-fixtures remain fixed after writes. Test the real ERP calculations, concurrency,
-approval availability and notification handling separately before switching live.
+scenarios can be submitted; unknown ones have `CanSubmit=false`. Leave-request
+writes check ownership, eligibility, pending status, reason/date formats and
+overlap. Submitting or withdrawing requests does not recalculate balance
+fixtures. Test the real ERP calculations, concurrency, approval availability
+and notification handling separately before switching live.
+
+In Supabase development mode, a user with processing permission can edit or
+create a fixture for the employee and leave type attached to a selected request
+from the approval details screen. Fixture lookup and writes require the
+application ID; the RPC derives the employee/type from that request, requires
+the matching 22017/22018 permission, and rejects editing one's own request.
+New fixtures require cycle start/end dates containing the as-at date. Values
+must be nonnegative numbers; `Available` is mirrored to `Remaining` and `Used`
+to `TakenDays`. This does not update ERP balances; the ERP adapter rejects this
+development-only operation.
 
 The optional workflow migration switches explicitly configured balance snapshots
 atomically on submit/edit/withdraw/approve/reject. It does not recalculate

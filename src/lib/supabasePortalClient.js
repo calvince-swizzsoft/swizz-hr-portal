@@ -20,19 +20,21 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     if (status === 401) { expiresAt = 0; onUnauthorized(); }
     throw error;
   }
-  async function request(operation, args = {}, { signal } = {}, rpc = ['portal_dev_request', { operation, args }]) {
+  async function rpc(name, params, signal) {
     signal?.throwIfAborted();
     if (!expiresAt || Date.now() >= expiresAt) fail('Your session has ended. Please sign in again.', 401, 'AUTHENTICATION_REQUIRED');
     try {
-      let query = getClient().rpc(...rpc);
+      let query = getClient().rpc(name, params);
       if (signal) query = query.abortSignal(signal);
       const { data, error, status } = await query;
       signal?.throwIfAborted();
       if (error) {
         if (error.name === 'AbortError') throw error;
         const setupErrors = {
-          PGRST202: rpc[0] === 'portal_dev_update_profile'
+          PGRST202: name === 'portal_dev_update_profile'
             ? 'Profile updates are unavailable. Apply the contact self-service migration to this Supabase project.'
+            : name === 'portal_dev_processing_balance_fixture'
+            ? 'Approver balance fixture tools are unavailable. Apply the approver balance fixture migration to this Supabase project.'
             : 'The development API function is unavailable. Apply the existing-mirror adapter migration to this Supabase project.',
           '42501': 'Access to the development API was denied. Check the migration grants and the signed-in Auth role.',
           '42P01': 'A required development table or view is missing. Check that the adapter migration completed successfully.',
@@ -51,6 +53,9 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
       if (error instanceof ApiError || error.name === 'AbortError') throw error;
       throw new ApiError('The development HR service could not be reached. Please try again.');
     }
+  }
+  function request(operation, args = {}, { signal } = {}) {
+    return rpc('portal_dev_request', { operation, args }, signal);
   }
   return {
     source: 'supabase',
@@ -74,12 +79,13 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     async updateProfile(changes) {
       let body;
       try { body = pickProfileChanges(changes); } catch (error) { throw new ApiError(error.message, 400); }
-      return request('updateProfile', {}, {}, ['portal_dev_update_profile', { changes: body }]);
+      return rpc('portal_dev_update_profile', { changes: body });
     },
     leaveTypes: (options) => request('leaveTypes', {}, options),
     applications: (pageIndex = 0, options) => request('applications', { pageIndex, pageSize: 20 }, options),
     application: (id, options) => request('application', { id }, options),
     balances: (query, options) => request('balances', query, options),
+    processingBalanceFixture: (args, options) => rpc('portal_dev_processing_balance_fixture', { args }, options?.signal),
     preview: (query, options) => request('preview', query, options),
     submitLeave: (body) => request('submitLeave', body),
     updateLeave: (id, body) => request('updateLeave', { ...body, id }),
