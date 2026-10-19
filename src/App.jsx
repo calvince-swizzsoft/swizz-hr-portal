@@ -71,7 +71,7 @@ export default function App() {
     {isApprover && <><p className="nav-label">LEAVE APPROVALS</p><nav><NavLink to="/approvals">Approvals</NavLink></nav></>}
     <div className="sidebar-bottom"><span>{profile.CustomerFullName}</span><button onClick={logout}>Sign out</button></div></aside>
     <main><div className="topbar"><span>Welcome, {profile.CustomerIndividualFirstName || 'colleague'}</span><span className="status-dot">{isApprover ? 'Leave approver' : 'Employee portal'}</span></div><ScreenErrorBoundary key={pathname} onHome={() => navigate(home)} homeLabel={isApprover ? 'Back to approvals' : 'Back to my profile'}><Routes>
-      <Route path="/profile" element={<Profile api={api} profile={profile} onUpdated={setProfile} />} /><Route path="/leave" element={<Leave api={api} />} /><Route path="/leave-types" element={<LeaveTypes api={api} />} /><Route path="/leave-type" element={<LeaveTypes api={api} />} /><Route path="/processing/leave" element={<Navigate to="/approvals" replace />} /><Route path="/leave/:id" element={<ApplicationDetail api={api} />} /><Route path="/balances" element={<Balances api={api} />} /><Route path="/remaining" element={<Remaining api={api} />} /><Route path="/applications" element={<Navigate to="/leave" replace />} />
+      <Route path="/profile" element={<Profile api={api} profile={profile} onUpdated={setProfile} />} /><Route path="/leave" element={<Leave api={api} />} /><Route path="/leave-types" element={<LeaveTypes api={api} />} /><Route path="/leave-type" element={<LeaveTypes api={api} />} /><Route path="/processing/leave" element={<Navigate to="/approvals" replace />} /><Route path="/leave/:id" element={<Navigate to="/leave" replace />} /><Route path="/balances" element={<Balances api={api} />} /><Route path="/remaining" element={<Remaining api={api} />} /><Route path="/applications" element={<Navigate to="/leave" replace />} />
       {isApprover && <><Route path="/approvals" element={<Approvals api={api} profile={profile} />} /><Route path="/approvals/:id" element={<ApprovalReview api={api} profile={profile} />} /></>}<Route path="*" element={<Navigate to={home} replace />} />
     </Routes></ScreenErrorBoundary></main></div>;
 }
@@ -111,14 +111,14 @@ function LeaveTypes({ api }) {
   return <Card title="Leave types"><LoadState state={state} />{state.data && <div className="list-wrapper">{state.data.length ? state.data.map(type => <div className="list-row type-row" key={type.Id}><strong>{type.Description}</strong><span>{type.Entitlement} {type.UnitTypeDescription}</span><button onClick={() => navigate(`/balances?leaveTypeId=${encodeURIComponent(type.Id)}`)}>View balance</button></div>) : <div className="empty">No leave types available.</div>}</div>}</Card>;
 }
 function Leave({ api }) {
-  const [page, setPage] = useState(0); const [open, setOpen] = useState(false); const [busyId, setBusyId] = useState(null); const [error, setError] = useState(null); const [success, setSuccess] = useState(''); const navigate = useNavigate();
+  const [page, setPage] = useState(0); const [open, setOpen] = useState(false); const [busyId, setBusyId] = useState(null); const [error, setError] = useState(null); const [success, setSuccess] = useState('');
   const state = useLoad(async signal => { const [applications, types] = await Promise.all([api.applications(page, { signal }), api.leaveTypes({ signal })]); return { applications, types }; }, [api, page]);
   useRefreshOnFocus(() => { if (!open) state.retry(); });
   async function withdraw(item) { if (!window.confirm('Withdraw this pending leave request?')) return; setBusyId(item.Id); setError(null); try { await api.withdraw(item.Id); setSuccess('Leave request withdrawn.'); state.retry(); } catch (e) { setError(e); } finally { setBusyId(null); } }
   const data = state.data?.applications;
   return <Card title="My leave" action={<div className="row-actions"><button onClick={state.retry} disabled={state.loading || !!busyId}>Refresh</button><button className="primary" onClick={() => setOpen(true)} disabled={!state.data}>Request leave</button></div>}><Feedback error={error} />{success && <p className="success" role="status">{success}</p>}<LoadState state={state} />
     {open && state.data && <LeaveForm api={api} types={state.data.types} onClose={() => setOpen(false)} onSaved={saved => { setOpen(false); setSuccess(saved.NotificationPending ? 'Request saved. The HR notification is pending.' : 'Leave request submitted.'); setPage(0); state.retry(); }} />}
-    {data && <><div className="list-wrapper"><div className="list-header"><span>Leave type</span><span>Dates</span><span>Status</span><span>Actions</span></div>{data.PageCollection.length ? data.PageCollection.map(item => <div className="list-row" key={item.Id}><div><strong>{item.LeaveTypeDescription}</strong><small>{item.Reason}</small></div><span>{dateText(item.Start)} - {dateText(item.End)}</span><span className={`badge status-${item.Status}`}>{item.StatusDescription}</span><div className="row-actions"><button onClick={() => navigate(`/leave/${item.Id}`)}>View</button>{item.Status === 1 && <button disabled={!!busyId} onClick={() => withdraw(item)}>{busyId === item.Id ? 'Withdrawing...' : 'Withdraw'}</button>}</div></div>) : <div className="empty">No leave requests yet.</div>}</div><div className="pagination"><button disabled={page === 0 || !!busyId} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, data.TotalPages)}</span><button disabled={page + 1 >= data.TotalPages || !!busyId} onClick={() => setPage(x => x + 1)}>Next</button></div></>}
+    {data && <><div className="list-wrapper"><div className="list-header"><span>Leave type</span><span>Dates</span><span>Status</span><span>Actions</span></div>{data.PageCollection.length ? data.PageCollection.map(item => <div className="list-row" key={item.Id}><div><strong>{item.LeaveTypeDescription}</strong></div><span>{dateText(item.Start)} - {dateText(item.End)}</span><span className={`badge status-${item.Status}`}>{item.StatusDescription}</span><div className="row-actions">{item.Status === 1 && <button disabled={!!busyId} onClick={() => withdraw(item)}>{busyId === item.Id ? 'Withdrawing...' : 'Withdraw'}</button>}</div></div>) : <div className="empty">No leave requests yet.</div>}</div><div className="pagination"><button disabled={page === 0 || !!busyId} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, data.TotalPages)}</span><button disabled={page + 1 >= data.TotalPages || !!busyId} onClick={() => setPage(x => x + 1)}>Next</button></div></>}
   </Card>;
 }
 function ApplicationDetail({ api }) {
@@ -148,15 +148,22 @@ function Remaining({ api }) {
   }, [api, asAt]);
   useRefreshOnFocus(state.retry);
   const number = value => value == null || value === '' || Number.isNaN(Number(value)) ? '—' : Number(value);
+  // The summary only adds up the figures shown in the rows; it does not apply any leave rules.
+  const balances = (state.data || []).map(row => row.statistics?.Balance).filter(Boolean);
+  const sum = key => balances.reduce((total, balance) => total + (Number(balance[key]) || 0), 0);
+  const totalRemaining = balances.reduce((total, balance) => total + (Number(balance.Remaining ?? balance.Available) || 0), 0);
   return <Card title="Remaining leave" action={<button onClick={state.retry} disabled={!asAt || state.loading}>Refresh</button>}><p className="muted section-intro">Days you have left for each leave type. Pending requests are already deducted; the figures update after a request is approved, rejected or withdrawn.</p>
     <div className="form-grid"><Field label="As at"><input type="date" required value={asAt} onChange={e => setAsAt(e.target.value)} /></Field></div>
     {!asAt ? <div className="empty">Select a date.</div> : <LoadState state={state} />}
+    {state.data && <div className="remaining-summary" role="status"><h2>Remaining leave summary</h2>{balances.length
+      ? <p><strong className={`remaining-days${totalRemaining <= 0 ? ' none' : ''}`}>{totalRemaining}</strong> day(s) remaining across {balances.length} leave type{balances.length === 1 ? '' : 's'} · {sum('Reserved')} day(s) pending approval</p>
+      : <p className="muted">No balances are available for this date.</p>}</div>}
     {state.data && <div className="list-wrapper"><div className="list-header remaining-row"><span>Leave type</span><span>Entitlement</span><span>Taken</span><span>Pending</span><span>Days remaining</span></div>
       {state.data.length ? state.data.map(({ type, statistics, error }) => {
         const balance = statistics?.Balance; const remaining = balance?.Remaining ?? balance?.Available;
         return <div className="list-row remaining-row" key={type.Id}><div><strong>{type.Description}</strong><small>{type.UnitTypeDescription}</small></div>
           {balance ? <><span><small>Entitlement</small>{number(balance.Entitlement)}</span><span><small>Taken</small>{number(balance.Used)}</span><span><small>Pending</small>{number(balance.Reserved)}</span>
-            <span className={`remaining-days${remaining <= 0 ? ' none' : remaining <= 3 ? ' low' : ''}`}>{number(remaining)}<small>day(s) remaining</small></span></>
+            <span className={`remaining-days${remaining <= 0 ? ' none' : remaining <= 3 ? ' low' : ''}`}>{number(remaining)}<small>{remaining <= 0 ? 'none left' : remaining <= 3 ? 'day(s) remaining – running low' : 'day(s) remaining'}</small></span></>
             : <div className="remaining-missing"><strong>No balance available for this date.</strong><small>{statistics?.BalanceError || error?.message}</small></div>}</div>;
       }) : <div className="empty">No leave types available.</div>}</div>}
   </Card>;
@@ -173,7 +180,7 @@ function BalanceFixtureEditor({ api, application }) {
     try {
       await api.processingBalanceFixture({
         action: 'save', applicationId: application.Id, asAt: balanceAsAt, pageIndex: 0,
-        ...(balanceFixture.data ? {} : { CycleStart: form.get('CycleStart'), CycleEnd: form.get('CycleEnd') }),
+        ...(balanceFixture.data?.Balance ? {} : { CycleStart: form.get('CycleStart'), CycleEnd: form.get('CycleEnd') }),
         Entitlement: Number(form.get('Entitlement')), Used: Number(form.get('Used')),
         Reserved: Number(form.get('Reserved')), Available: Number(form.get('Available')),
       });

@@ -59,8 +59,11 @@ Apply migrations in this order (skip already-applied versions):
 3. `20261020000000_processing_queue_unlinked_rows.sql`
 4. `20261020000001_profile_self_service.sql`
 5. `20261021000000_profile_contact_self_service.sql`
+6. `20261021000001_balance_fixture_edit.sql`
+7. `20261022000000_balance_fixture_create.sql`
+8. `20261023000000_approver_balance_fixtures.sql`
 
-The last migration enforces email/mobile-only updates. The earlier profile
+The contact self-service migration enforces email/mobile-only updates. The earlier profile
 migration has been assigned a distinct version to avoid collision with the
 queue migration. If your project already recorded version `20261020000000`,
 inspect which of the two old branch scripts you applied: the version alone is
@@ -75,7 +78,10 @@ To enable approver editing and adding of employee balance fixtures, apply
 `migrations/20261023000000_approver_balance_fixtures.sql` after the base adapter
 and leave-workflow migrations. The final migration removes employee access to
 the earlier fixture editor and restricts fixture changes to the approver
-permissions for the selected request. The portal asks for cycle start/end dates
+permissions for the selected request. The fixture editor version was moved to `20261021000001` to avoid a collision
+with contact self-service. If the old fixture version was already applied,
+inspect the applied scripts before recording the corrected version; preserve
+existing migration history and mirror rows. The portal asks for cycle start/end dates
 when adding a fixture.
 
 ## Login using an existing employee
