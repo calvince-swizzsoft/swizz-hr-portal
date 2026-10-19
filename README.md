@@ -77,7 +77,7 @@ See the client contract for validation, deployment and migration requirements.
 
 Balances and previews in Supabase use fixed scenarios, not live calculations.
 The workflow migration selects predefined balance snapshots on request/decision
-changes; preview fixtures remain fixed. Unknown preview
+changes; preview fixtures remain fixed. Approvers can edit or add employee balance fixtures from approval details after applying the fixture migrations; employees cannot edit fixtures, and fixture edits never update ERP data. Unknown preview
 dates cannot be submitted; unknown balance scenarios return a clear error.
 The **Remaining** section summarizes, for every eligible leave type and a chosen
 as-at date, the entitlement, days taken, days pending and days remaining, using

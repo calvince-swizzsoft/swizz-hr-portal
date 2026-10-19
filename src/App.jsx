@@ -132,7 +132,7 @@ function Balances({ api }) {
   const types = useLoad(signal => api.leaveTypes({ signal }), [api]); const state = useLoad(signal => leaveTypeId && asAt ? api.balances({ leaveTypeId, asAt, pageIndex: page }, { signal }) : null, [api, leaveTypeId, asAt, page]); const data = state.data;
   useRefreshOnFocus(state.retry);
   return <Card title="Leave balances" action={<button onClick={state.retry} disabled={!leaveTypeId || state.loading}>Refresh balance</button>}><LoadState state={types} /><div className="form-grid"><Field label="Leave type"><select value={leaveTypeId} onChange={e => { setType(e.target.value); setPage(0); }}><option value="">Select leave type</option>{types.data?.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="As at"><input type="date" value={asAt} onChange={e => { setAsAt(e.target.value); setPage(0); }} /></Field></div>
-    {leaveTypeId && asAt ? <LoadState state={state} /> : <div className="empty">Select a leave type and date.</div>}{data && <><Feedback error={data.BalanceError} />{data.Balance && <dl className="details-grid">{['Entitlement', 'Used', 'Reserved', 'Available'].map(key => <div key={key}><dt>{key}</dt><dd>{data.Balance[key]}</dd></div>)}</dl>}<h2>Leave history</h2><div className="list-wrapper">{data.History.length ? data.History.map(item => <div className="list-row" key={item.Id}><span>{dateText(item.Start)} - {dateText(item.End)}</span><span>{item.Reason}</span><span>{({ 1: 'Pending', 2: 'Approved', 4: 'Rejected', 8: 'Recalled', 16: 'Withdrawn' })[item.Status] || 'Unknown'}</span><span>{item.ChargedDaysInYear} days</span></div>) : <div className="empty">No history for this period.</div>}</div><div className="pagination"><button disabled={page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, Math.ceil(data.HistoryCount / 10))}</span><button disabled={(page + 1) * 10 >= data.HistoryCount} onClick={() => setPage(x => x + 1)}>Next</button></div></>}</Card>;
+    {leaveTypeId && asAt ? <LoadState state={state} /> : <div className="empty">Select a leave type and date.</div>}{data && <><Feedback error={data.BalanceError} />{data.Balance && <><div className="balance-summary"><div><span>Leaves left</span><strong>{data.Balance.Available}</strong></div><div><span>Leaves used</span><strong>{data.Balance.Used}</strong></div></div><dl className="details-grid">{['Entitlement', 'Reserved'].map(key => <div key={key}><dt>{key}</dt><dd>{data.Balance[key]}</dd></div>)}</dl></>}<h2>Leave history</h2><div className="list-wrapper">{data.History.length ? data.History.map(item => <div className="list-row" key={item.Id}><span>{dateText(item.Start)} - {dateText(item.End)}</span><span>{item.Reason}</span><span>{({ 1: 'Pending', 2: 'Approved', 4: 'Rejected', 8: 'Recalled', 16: 'Withdrawn' })[item.Status] || 'Unknown'}</span><span>{item.ChargedDaysInYear} days</span></div>) : <div className="empty">No history for this period.</div>}</div><div className="pagination"><button disabled={page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, Math.ceil(data.HistoryCount / 10))}</span><button disabled={(page + 1) * 10 >= data.HistoryCount} onClick={() => setPage(x => x + 1)}>Next</button></div></>}</Card>;
 }
 // Summary of days remaining per eligible leave type, read from the balances operation; nothing is calculated here.
 function Remaining({ api }) {
@@ -160,6 +160,29 @@ function Remaining({ api }) {
             : <div className="remaining-missing"><strong>No balance available for this date.</strong><small>{statistics?.BalanceError || error?.message}</small></div>}</div>;
       }) : <div className="empty">No leave types available.</div>}</div>}
   </Card>;
+}
+function BalanceFixtureEditor({ api, application }) {
+  const [editingBalance, setEditingBalance] = useState(false); const [balanceAsAt, setBalanceAsAt] = useState(api.source === 'supabase' ? '2027-01-10' : today()); const [balanceBusy, setBalanceBusy] = useState(false); const [balanceError, setBalanceError] = useState(null); const [balanceSuccess, setBalanceSuccess] = useState('');
+  const balanceFixture = useLoad(signal => editingBalance && application && api.source === 'supabase'
+    ? api.processingBalanceFixture({ action: 'get', applicationId: application.Id, asAt: balanceAsAt, pageIndex: 0 }, { signal })
+    : null, [api, editingBalance, application?.Id, balanceAsAt]);
+  async function saveBalanceFixture(event) {
+    event.preventDefault(); if (!application || balanceBusy) return;
+    const form = new FormData(event.currentTarget);
+    setBalanceBusy(true); setBalanceError(null); setBalanceSuccess('');
+    try {
+      await api.processingBalanceFixture({
+        action: 'save', applicationId: application.Id, asAt: balanceAsAt, pageIndex: 0,
+        ...(balanceFixture.data ? {} : { CycleStart: form.get('CycleStart'), CycleEnd: form.get('CycleEnd') }),
+        Entitlement: Number(form.get('Entitlement')), Used: Number(form.get('Used')),
+        Reserved: Number(form.get('Reserved')), Available: Number(form.get('Available')),
+      });
+      setBalanceSuccess('Employee balance fixture saved. Refresh the employee balance screen to see the update.');
+      balanceFixture.retry();
+    } catch (e) { setBalanceError(e); }
+    finally { setBalanceBusy(false); }
+  }
+  return <section className="request-form fixture-form"><div className="form-heading"><h2>Employee balance fixture</h2><button onClick={() => { setEditingBalance(value => !value); setBalanceError(null); setBalanceSuccess(''); }}>{editingBalance ? 'Close editor' : 'Edit fixture'}</button></div><p className="section-intro">Approver-only development fixture. Changes appear on the employee's balance screen; they do not update ERP balances.</p>{editingBalance && <><div className="form-grid"><Field label="Balance as at"><input type="date" value={balanceAsAt} onChange={event => { setBalanceAsAt(event.target.value); setBalanceSuccess(''); }} /></Field></div><LoadState state={balanceFixture} />{!balanceFixture.loading && !balanceFixture.error && <>{balanceFixture.data?.Balance ? <p className="muted">Existing fixture loaded for {dateText(balanceAsAt)}.</p> : <p className="section-intro">No fixture exists for this employee and date. Enter cycle dates and values to create one.</p>}<form key={balanceAsAt + String(balanceFixture.loading)} onSubmit={saveBalanceFixture}><div className="form-grid">{!balanceFixture.data?.Balance && <><Field label="Cycle start"><input name="CycleStart" type="date" required defaultValue={`${balanceAsAt.slice(0, 4)}-01-01`} disabled={balanceBusy} /></Field><Field label="Cycle end"><input name="CycleEnd" type="date" required defaultValue={`${balanceAsAt.slice(0, 4)}-12-31`} disabled={balanceBusy} /></Field></>}{['Entitlement', 'Used', 'Reserved', 'Available'].map(key => <Field key={key} label={key}><input name={key} type="number" min="0" step="0.01" required defaultValue={balanceFixture.data?.Balance?.[key] ?? ''} disabled={balanceBusy} /></Field>)}</div><Feedback error={balanceError} />{balanceSuccess && <p role="status" className="success">{balanceSuccess}</p>}<button className="primary" disabled={balanceBusy}>{balanceBusy ? 'Saving...' : balanceFixture.data?.Balance ? 'Save fixture' : 'Create fixture'}</button></form></>}</>}</section>;
 }
 function PreviewSummary({ preview }) {
   return <div className="balance-preview"><strong>{preview.RequestedDays ?? 0} chargeable day(s)</strong><Feedback error={preview.Error} />{(Array.isArray(preview.Cycles) ? preview.Cycles : []).map((cycle, i) => <div key={i}><span>{dateText(cycle.Start)} - {dateText(cycle.End)}</span><p>Available: {cycle.Available} | Requested: {cycle.Requested} | Remaining: {cycle.Remaining}</p></div>)}</div>;
@@ -210,6 +233,7 @@ function ApprovalReview({ api, profile }) {
     {state.error?.status === 403 ? <ProcessingDenied /> : <LoadState state={state} />}
     {state.data && !item && <Feedback error={unexpectedProcessingReply} />}
     {item && <><dl className="details-grid">{details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>)}</dl>{preview && <><h2>Balance preview</h2><PreviewSummary preview={preview} /></>}
+      {api.source === 'supabase' && !own && <BalanceFixtureEditor key={item.Id} api={api} application={item} />}
       {item.Status === 1 && (own ? <p className="help" role="status">You can't approve or reject your own request. Another approver must decide it.</p>
         : <div className="request-form"><Feedback error={error} /><Field label="Remarks (optional)"><textarea maxLength={256} rows={3} value={remarks} onChange={e => { setError(null); setRemarks(e.target.value); }} disabled={!!busy} /></Field>
           <div className="row-actions"><button className="primary" onClick={() => decide('approve')} disabled={!!busy}>{busy === 'approve' ? 'Approving...' : 'Approve'}</button><button className="danger" onClick={() => decide('reject')} disabled={!!busy}>{busy === 'reject' ? 'Rejecting...' : 'Reject'}</button></div></div>)}</>}
