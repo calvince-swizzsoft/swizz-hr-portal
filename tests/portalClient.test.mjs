@@ -71,18 +71,18 @@ test('Supabase read cancellation remains AbortError', async () => {
   const controller = new AbortController(); controller.abort();
   await assert.rejects(api.profile({signal:controller.signal}),{name:'AbortError'});
 });
-test('balance fixture edits use the dedicated development RPC and ERP refuses them', async () => {
+test('processing balance fixture updates use the approver RPC and ERP refuses them', async () => {
   const fixture = { AsAt: '2027-01-10', Balance: { Entitlement: 24, Used: 4, Reserved: 1, Available: 19 } };
-  const supabase = fakeSupabase((operation, name) => name === 'portal_dev_edit_balance_fixture'
+  const supabase = fakeSupabase((operation, name) => name === 'portal_dev_processing_balance_fixture'
     ? { success: true, data: fixture }
     : { success: true, data: values[operation] });
   const dev = createPortalClient({ source: 'supabase', supabase });
   await dev.login({ UserName: 'employee.one@example.test', Password: 'test-only' });
-  const args = { leaveTypeId: 'annual', asAt: '2027-01-10', pageIndex: 0, CycleStart: '2027-01-01', CycleEnd: '2027-12-31', Entitlement: 24, Used: 4, Reserved: 1, Available: 19 };
-  assert.deepEqual(await dev.updateBalanceFixture(args), fixture);
-  assert.deepEqual(supabase.calls[1], ['portal_dev_edit_balance_fixture', { args }]);
+  const args = { action: 'get', applicationId: application.Id, asAt: '2027-01-10', pageIndex: 0 };
+  assert.deepEqual(await dev.processingBalanceFixture(args), fixture);
+  assert.deepEqual(supabase.calls[1], ['portal_dev_processing_balance_fixture', { args }]);
   const erp = createPortalClient({ source: 'erp' });
-  await assert.rejects(erp.updateBalanceFixture(args), /only in Supabase development mode/);
+  await assert.rejects(erp.processingBalanceFixture(args), /only in Supabase development mode/);
 });
 test('invalid source fails closed and ERP errors never call Supabase', async () => {
   assert.throws(()=>createPortalClient({source:'unknown'}),/Unsupported/);
@@ -98,4 +98,6 @@ test('Supabase setup failures report a safe actionable code without raw database
   await api.login({ UserName: 'employee.one@example.test', Password: 'test-only' });
   await assert.rejects(api.profile(), error => error.code === 'PGRST202'
     && /adapter migration/.test(error.message) && !/Raw database/.test(error.message));
+  await assert.rejects(api.processingBalanceFixture({ action: 'get', applicationId: application.Id, asAt: '2027-01-10', pageIndex: 0 }),
+    error => error.code === 'PGRST202' && /approver balance fixture migration/.test(error.message));
 });

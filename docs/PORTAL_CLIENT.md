@@ -22,13 +22,13 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `applications(pageIndex=0, options)` | Zero-based page, fixed pageSize 20 | ApplicationPage | GET `hr-portal/me/leave-applications` |
 | `application(id, options)` | Own application ID | LeaveApplication | GET `hr-portal/me/leave-applications/{id}` |
 | `balances(query, options)` | `{ leaveTypeId, asAt, pageIndex=0 }` | EmployeeLeaveStatistics | GET `hr-portal/me/leave-balances` |
-| `updateBalanceFixture(args)` | `{ leaveTypeId, asAt, pageIndex, Entitlement, Used, Reserved, Available, CycleStart?, CycleEnd? }` | Saved EmployeeLeaveStatistics fixture; Supabase development only | None |
 | `preview(query, options)` | `{ leaveTypeId, start, end, excludedId? }` | LeavePreview | GET `hr-portal/me/leave-preview` |
 | `submitLeave(body)` | LeaveRequest | Saved LeaveApplication | POST `hr-portal/me/leave-applications` |
 | `updateLeave(id, body)` | Own pending ID and LeaveRequest | Saved LeaveApplication | PUT `hr-portal/me/leave-applications/{id}` |
 | `withdraw(id)` | Own pending ID | Saved LeaveApplication | POST `hr-portal/me/leave-applications/{id}/withdraw` |
 | `processingApplications(query, options)` | `{ status:1 or 2, pageIndex:0, pageSize:20 }` | ApplicationPage; permission checked server-side | GET `hr-portal/processing/leave-applications` |
 | `processingApplication(id, options)` | Processing application ID | `{ Application, Preview }` | GET `hr-portal/processing/leave-applications/{id}` |
+| `processingBalanceFixture(args, options)` | `{ action:'get' or 'save', applicationId, asAt, pageIndex, Entitlement?, Used?, Reserved?, Available?, CycleStart?, CycleEnd? }` | EmployeeLeaveStatistics fixture; processing permission required, Supabase development only | None |
 | `authorizeLeave(id, body)` | `{ decision:'approve' or 'reject', remarks }` | Saved LeaveApplication | POST `hr-portal/processing/leave-applications/{id}/authorize` |
 
 `source` and `loginLabel` are presentation metadata. In Supabase mode login uses
@@ -124,12 +124,15 @@ overlap. Submitting or withdrawing requests does not recalculate balance
 fixtures. Test the real ERP calculations, concurrency, approval availability
 and notification handling separately before switching live.
 
-In Supabase development mode, the balance screen can edit an existing fixture
-or create one for the signed-in employee's eligible leave type, date and page.
-New fixtures require cycle start/end dates containing the as-at date. The RPC
-derives employee ownership from Auth, rejects negative/non-numeric values, and
-mirrors `Available` to `Remaining` and `Used` to `TakenDays`. This does not
-update ERP balances; the ERP adapter rejects this development-only operation.
+In Supabase development mode, a user with processing permission can edit or
+create a fixture for the employee and leave type attached to a selected request
+from the approval details screen. Fixture lookup and writes require the
+application ID; the RPC derives the employee/type from that request, requires
+the matching 22017/22018 permission, and rejects editing one's own request.
+New fixtures require cycle start/end dates containing the as-at date. Values
+must be nonnegative numbers; `Available` is mirrored to `Remaining` and `Used`
+to `TakenDays`. This does not update ERP balances; the ERP adapter rejects this
+development-only operation.
 
 The optional workflow migration switches explicitly configured balance snapshots
 atomically on submit/edit/withdraw/approve/reject. It does not recalculate

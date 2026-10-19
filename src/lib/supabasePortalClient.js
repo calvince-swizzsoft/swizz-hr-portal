@@ -30,8 +30,8 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
       if (error) {
         if (error.name === 'AbortError') throw error;
         const setupErrors = {
-          PGRST202: name === 'portal_dev_edit_balance_fixture'
-            ? 'The balance fixture editor is unavailable. Apply the balance fixture editor migration to this Supabase project.'
+          PGRST202: name === 'portal_dev_processing_balance_fixture'
+            ? 'Approver balance fixture tools are unavailable. Apply the approver balance fixture migration to this Supabase project.'
             : 'The development API function is unavailable. Apply the existing-mirror adapter migration to this Supabase project.',
           '42501': 'Access to the development API was denied. Check the migration grants and the signed-in Auth role.',
           '42P01': 'A required development table or view is missing. Check that the adapter migration completed successfully.',
@@ -76,7 +76,7 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     applications: (pageIndex = 0, options) => request('applications', { pageIndex, pageSize: 20 }, options),
     application: (id, options) => request('application', { id }, options),
     balances: (query, options) => request('balances', query, options),
-    updateBalanceFixture: (args) => rpc('portal_dev_edit_balance_fixture', { args }),
+    processingBalanceFixture: (args, options) => rpc('portal_dev_processing_balance_fixture', { args }, options?.signal),
     preview: (query, options) => request('preview', query, options),
     submitLeave: (body) => request('submitLeave', body),
     updateLeave: (id, body) => request('updateLeave', { ...body, id }),

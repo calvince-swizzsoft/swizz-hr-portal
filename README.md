@@ -70,12 +70,11 @@ passwords are managed through its dashboard; it does not simulate the ERP
 initial-password workflow.
 
 Balances and previews in Supabase are fixed scenarios, not live calculations.
-They do not change when requests are submitted or withdrawn. An authenticated
-employee can edit the values in their own existing balance fixture from the
-balance screen after applying the fixture-editor migrations. They can add a
-fixture for a new as-at date with explicit cycle dates; this does not change
-ERP data. Unknown preview dates cannot be submitted;
-unknown balance scenarios return a clear error.
+They do not change when requests are submitted or withdrawn. A user with
+synthetic leave-processing permission can edit or add an employee's balance
+fixture from approval details after applying the fixture migrations; employees
+cannot edit fixtures, and no fixture edit changes ERP data. Unknown preview
+dates cannot be submitted; unknown balance scenarios return a clear error.
 Synthetic notifications are not sent. Payroll/P9/requisitions are not
 implemented. The source models are aligned to the local ERP
 controller/DTO definitions, but live authenticated integration must still be

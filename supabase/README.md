@@ -42,10 +42,14 @@ After applying the optional leave workflow migration, also apply
 processing rows whose employee profile is missing from the actionable queue,
 reports their count, and prevents opening or deciding an unlinked request.
 
-To enable editing and adding an employee's own balance fixtures in the portal,
-apply `migrations/20261021000000_balance_fixture_edit.sql` and then
-`migrations/20261022000000_balance_fixture_create.sql` after the base adapter
-migration. The portal asks for cycle start/end dates when adding a fixture.
+To enable approver editing and adding of employee balance fixtures, apply
+`migrations/20261021000000_balance_fixture_edit.sql`,
+`migrations/20261022000000_balance_fixture_create.sql`, then
+`migrations/20261023000000_approver_balance_fixtures.sql` after the base adapter
+and leave-workflow migrations. The final migration removes employee access to
+the earlier fixture editor and restricts fixture changes to the approver
+permissions for the selected request. The portal asks for cycle start/end dates
+when adding a fixture.
 
 ## Login using an existing employee
 
@@ -116,11 +120,12 @@ an EmployeeLeaveStatistics JSON payload. `portal_mirror_preview_fixtures` is
 keyed by employee/type/start/end and holds a LeavePreview JSON payload. These
 support the existing tables, not copied employee or application records.
 They are static and do not recalculate when applications change.
-In Supabase development mode, the balance screen can edit an existing balance
-fixture or add one for the signed-in employee and selected scenario. Apply the
-balance fixture editor and creation migrations listed above to enable this
-authenticated RPC; employee identity is derived from the linked Auth session,
-and direct table writes remain denied. The editor does not update ERP data.
+In Supabase development mode, a permitted approver can edit an existing balance
+fixture or add one for the request's employee/type from approval details. Apply
+the migrations listed above. The RPC derives the target employee and leave
+type from the selected application and checks the approver's 22017/22018 grant;
+employees cannot call the fixture editor, and direct table writes remain
+denied. The editor does not update ERP data.
 
 ## Optional synthetic seed
 
@@ -137,8 +142,8 @@ Both seeded employees receive leave type `20000000-0000-4000-8000-000000000001`.
 | --- | --- | --- |
 | Profile | Sign in as either employee | Own synthetic profile only |
 | Balances | Annual leave, as-at `2027-01-10`, page 0 | Entitlement 21, used 3, available 18; one approved history row. The Supabase balance screen defaults to this fixture date. |
-| Edit balance fixture | Annual leave, as-at `2027-01-10`, page 0 | Edit entitlement, used, reserved and available; updates only the signed-in employee's fixture. |
-| Add balance fixture | Eligible leave type, unconfigured as-at date | Create a fixture with explicit cycle dates and values for the signed-in employee only. |
+| Edit balance fixture | Authorized approver opens an employee's request | Edit entitlement, used, reserved and available for the request's employee and leave type. |
+| Add balance fixture | Authorized approver opens a request with no fixture for the selected date | Create a fixture with explicit cycle dates and values for that employee and leave type. |
 | New request | `2027-01-11` to `2027-01-13` | 3 fixture days; allowed unless overlapping |
 | Pending edit | `2027-01-18` to `2027-01-19` | 2 fixture days |
 | Insufficient balance | `2027-02-01` to `2027-03-01` | CanSubmit false |
@@ -155,11 +160,12 @@ dates, reason length and overlap. Employee row locks serialize mutations. No
 approval operation or notification delivery is provided; an operator prepares
 approved/rejected synthetic scenarios separately.
 
-Run `npm test` and `npm run check`. After optional seeding, the SQL operator can
-run `tests/portal-schema.test.sql` in the development project. It checks identity,
-ownership and transitions within a transaction and rolls back all test writes.
-The automated local SQL checks use an isolated PostgreSQL-compatible runtime;
-they do not prove your hosted project's current policies or Auth configuration.
+Run `npm test` and `npm run check`. After optional seeding and the base adapter,
+the SQL operator can run `tests/portal-schema.test.sql` in the development
+project. Run `tests/leave-workflow.test.sql` only after the workflow and
+approver-balance migrations are applied. The SQL tests check identity,
+ownership and transitions within a transaction and roll back all test writes.
+They do not prove your hosted project's current policies or Auth configuration.
 
 Reference: [client models](../docs/PORTAL_CLIENT.md), Supabase
 [functions](https://supabase.com/docs/guides/database/functions) and
