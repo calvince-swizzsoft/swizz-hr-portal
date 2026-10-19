@@ -16,8 +16,10 @@ begin
   assert not has_table_privilege('authenticated','public.leave_application_mirror','UPDATE'), 'Direct update must be denied';
   assert not has_table_privilege('anon','public.employee_mirror','SELECT'), 'Anonymous profiles must be denied';
   assert not has_function_privilege('anon','public.portal_dev_request(text,jsonb)','EXECUTE'), 'Anonymous RPC must be denied';
+  assert not has_function_privilege('anon','public.portal_dev_edit_balance_fixture(jsonb)','EXECUTE'), 'Anonymous fixture editing must be denied';
   perform set_config('request.jwt.claim.sub', '', true);
   assert (public.portal_dev_request('profile')->>'status')::integer = 401;
+  assert (public.portal_dev_edit_balance_fixture('{}')->>'status')::integer = 401;
   perform set_config('request.jwt.claim.sub', first_user::text, true);
   response := public.portal_dev_request('profile');
   assert response #>> '{data,Id}' = '10000000-0000-4000-8000-000000000001';
@@ -25,6 +27,21 @@ begin
   assert (public.portal_dev_request('applications','{"pageIndex":-1}')->>'status')::integer = 400;
   response := public.portal_dev_request('balances','{"leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-01-10"}');
   assert (response #>> '{data,Balance,Available}')::integer = 18;
+  response := public.portal_dev_edit_balance_fixture('{"leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-01-10","pageIndex":0,"Entitlement":24,"Used":4,"Reserved":1,"Available":19}');
+  assert (response->>'success')::boolean, response::text;
+  assert (response #>> '{data,Balance,Available}')::integer = 19;
+  assert (response #>> '{data,Balance,Remaining}')::integer = 19;
+  assert (response #>> '{data,TakenDays}')::integer = 4;
+  assert (public.portal_dev_edit_balance_fixture('{"leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-01-10","pageIndex":0,"Entitlement":-1,"Used":4,"Reserved":1,"Available":19}')->>'status')::integer = 400;
+  response := public.portal_dev_edit_balance_fixture('{"leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-03-10","pageIndex":0,"CycleStart":"2027-01-01","CycleEnd":"2027-12-31","Entitlement":21,"Used":2,"Reserved":1,"Available":18}');
+  assert (response->>'success')::boolean, response::text;
+  assert response #>> '{data,AsAt}' = '2027-03-10';
+  assert response #>> '{data,LeaveTypeDescription}' = 'Annual leave';
+  assert (response #>> '{data,Balance,Used}')::integer = 2;
+  assert (jsonb_array_length(response #> '{data,History}')) = 0;
+  assert (public.portal_dev_request('balances','{"leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-03-10"}') #>> '{data,Balance,Available}')::integer = 18;
+  assert (public.portal_dev_edit_balance_fixture('{"leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-03-11","pageIndex":0,"CycleStart":"2027-01-01","CycleEnd":"2027-12-31","Entitlement":21,"Used":2,"Reserved":1,"Available":18}')->>'success')::boolean,
+    'A separate fixture can be created for another as-at date';
   response := public.portal_dev_request('submitLeave',body || '{"EmployeeId":"10000000-0000-4000-8000-000000000002","status":2}');
   assert (response->>'success')::boolean, response::text;
   assert response #>> '{data,EmployeeId}' = '10000000-0000-4000-8000-000000000001';
@@ -37,6 +54,13 @@ begin
   assert (response #>> '{data,CanSubmit}')::boolean, 'Own edit preview must exclude itself';
   response := public.portal_dev_request('updateLeave', body || jsonb_build_object('id',saved_id,'start','2027-01-18','end','2027-01-19'));
   assert (response->>'success')::boolean, response::text;
+  perform set_config('request.jwt.claim.sub', second_user::text, true);
+  response := public.portal_dev_edit_balance_fixture('{"employeeId":"10000000-0000-4000-8000-000000000001","leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-01-10","pageIndex":0,"Entitlement":25,"Used":5,"Reserved":0,"Available":20}');
+  assert (response->>'success')::boolean, response::text;
+  assert (public.portal_dev_request('balances','{"leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-01-10"}') #>> '{data,Balance,Available}')::integer = 20;
+  perform set_config('request.jwt.claim.sub', first_user::text, true);
+  assert (public.portal_dev_request('balances','{"leaveTypeId":"20000000-0000-4000-8000-000000000001","asAt":"2027-01-10"}') #>> '{data,Balance,Available}')::integer = 19,
+    'A caller-supplied employeeId must not allow edits to another employee fixture';
   perform set_config('request.jwt.claim.sub', second_user::text, true);
   assert (public.portal_dev_request('application',jsonb_build_object('id',saved_id))->>'status')::integer = 404;
   assert (public.portal_dev_request('withdraw',jsonb_build_object('id',saved_id))->>'status')::integer = 404;

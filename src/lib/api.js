@@ -44,6 +44,7 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     applications: (pageIndex = 0, options) => request(`hr-portal/me/leave-applications?pageIndex=${pageIndex}&pageSize=20`, options),
     application: (id, options) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, options),
     balances: (query, options) => request(`hr-portal/me/leave-balances?${new URLSearchParams(query)}`, options),
+    updateBalanceFixture: async () => { throw new ApiError('Balance fixture editing is available only in Supabase development mode.', 400); },
     preview: (query, options) => request(`hr-portal/me/leave-preview?${new URLSearchParams(query)}`, options),
     submitLeave: (body) => request('hr-portal/me/leave-applications', { method: 'POST', body }),
     updateLeave: (id, body) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, { method: 'PUT', body }),

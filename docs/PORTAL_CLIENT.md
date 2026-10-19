@@ -22,6 +22,7 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `applications(pageIndex=0, options)` | Zero-based page, fixed pageSize 20 | ApplicationPage | GET `hr-portal/me/leave-applications` |
 | `application(id, options)` | Own application ID | LeaveApplication | GET `hr-portal/me/leave-applications/{id}` |
 | `balances(query, options)` | `{ leaveTypeId, asAt, pageIndex=0 }` | EmployeeLeaveStatistics | GET `hr-portal/me/leave-balances` |
+| `updateBalanceFixture(args)` | `{ leaveTypeId, asAt, pageIndex, Entitlement, Used, Reserved, Available, CycleStart?, CycleEnd? }` | Saved EmployeeLeaveStatistics fixture; Supabase development only | None |
 | `preview(query, options)` | `{ leaveTypeId, start, end, excludedId? }` | LeavePreview | GET `hr-portal/me/leave-preview` |
 | `submitLeave(body)` | LeaveRequest | Saved LeaveApplication | POST `hr-portal/me/leave-applications` |
 | `updateLeave(id, body)` | Own pending ID and LeaveRequest | Saved LeaveApplication | PUT `hr-portal/me/leave-applications/{id}` |
@@ -117,10 +118,18 @@ transport failures are sanitized; unexpected SQL failures are not shown raw.
 
 Synthetic fixtures do not recalculate balances, apply calendar rules, accrue
 entitlements, enqueue notifications or prove approval availability. Known preview
-scenarios can be submitted; unknown ones have `CanSubmit=false`. Writes check
-ownership, eligibility, pending status, reason/date formats and overlap. Balance
-fixtures remain fixed after writes. Test the real ERP calculations, concurrency,
-approval availability and notification handling separately before switching live.
+scenarios can be submitted; unknown ones have `CanSubmit=false`. Leave-request
+writes check ownership, eligibility, pending status, reason/date formats and
+overlap. Submitting or withdrawing requests does not recalculate balance
+fixtures. Test the real ERP calculations, concurrency, approval availability
+and notification handling separately before switching live.
+
+In Supabase development mode, the balance screen can edit an existing fixture
+or create one for the signed-in employee's eligible leave type, date and page.
+New fixtures require cycle start/end dates containing the as-at date. The RPC
+derives employee ownership from Auth, rejects negative/non-numeric values, and
+mirrors `Available` to `Remaining` and `Used` to `TakenDays`. This does not
+update ERP balances; the ERP adapter rejects this development-only operation.
 
 The optional workflow migration switches explicitly configured balance snapshots
 atomically on submit/edit/withdraw/approve/reject. It does not recalculate

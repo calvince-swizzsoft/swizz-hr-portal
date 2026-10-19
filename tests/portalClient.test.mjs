@@ -25,7 +25,7 @@ function fakeSupabase(reply = (operation) => ({ success: true, data: values[oper
     },
     rpc(name, params) {
       calls.push([name,params]);
-      const query = { abortSignal(signal) { calls.push(['signal',signal]); return query; }, then(resolve, reject) { return Promise.resolve({ data: reply(params.operation), error: null }).then(resolve,reject); } };
+      const query = { abortSignal(signal) { calls.push(['signal',signal]); return query; },       then(resolve, reject) { return Promise.resolve({ data: reply(params.operation, name, params), error: null }).then(resolve,reject); } };
       return query;
     },
   };
@@ -70,6 +70,19 @@ test('Supabase read cancellation remains AbortError', async () => {
   await api.login({UserName:'employee.one@example.test',Password:'test-only'});
   const controller = new AbortController(); controller.abort();
   await assert.rejects(api.profile({signal:controller.signal}),{name:'AbortError'});
+});
+test('balance fixture edits use the dedicated development RPC and ERP refuses them', async () => {
+  const fixture = { AsAt: '2027-01-10', Balance: { Entitlement: 24, Used: 4, Reserved: 1, Available: 19 } };
+  const supabase = fakeSupabase((operation, name) => name === 'portal_dev_edit_balance_fixture'
+    ? { success: true, data: fixture }
+    : { success: true, data: values[operation] });
+  const dev = createPortalClient({ source: 'supabase', supabase });
+  await dev.login({ UserName: 'employee.one@example.test', Password: 'test-only' });
+  const args = { leaveTypeId: 'annual', asAt: '2027-01-10', pageIndex: 0, CycleStart: '2027-01-01', CycleEnd: '2027-12-31', Entitlement: 24, Used: 4, Reserved: 1, Available: 19 };
+  assert.deepEqual(await dev.updateBalanceFixture(args), fixture);
+  assert.deepEqual(supabase.calls[1], ['portal_dev_edit_balance_fixture', { args }]);
+  const erp = createPortalClient({ source: 'erp' });
+  await assert.rejects(erp.updateBalanceFixture(args), /only in Supabase development mode/);
 });
 test('invalid source fails closed and ERP errors never call Supabase', async () => {
   assert.throws(()=>createPortalClient({source:'unknown'}),/Unsupported/);

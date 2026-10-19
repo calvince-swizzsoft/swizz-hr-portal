@@ -19,18 +19,20 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     if (status === 401) { expiresAt = 0; onUnauthorized(); }
     throw error;
   }
-  async function request(operation, args = {}, { signal } = {}) {
+  async function rpc(name, params, signal) {
     signal?.throwIfAborted();
     if (!expiresAt || Date.now() >= expiresAt) fail('Your session has ended. Please sign in again.', 401, 'AUTHENTICATION_REQUIRED');
     try {
-      let query = getClient().rpc('portal_dev_request', { operation, args });
+      let query = getClient().rpc(name, params);
       if (signal) query = query.abortSignal(signal);
       const { data, error, status } = await query;
       signal?.throwIfAborted();
       if (error) {
         if (error.name === 'AbortError') throw error;
         const setupErrors = {
-          PGRST202: 'The development API function is unavailable. Apply the existing-mirror adapter migration to this Supabase project.',
+          PGRST202: name === 'portal_dev_edit_balance_fixture'
+            ? 'The balance fixture editor is unavailable. Apply the balance fixture editor migration to this Supabase project.'
+            : 'The development API function is unavailable. Apply the existing-mirror adapter migration to this Supabase project.',
           '42501': 'Access to the development API was denied. Check the migration grants and the signed-in Auth role.',
           '42P01': 'A required development table or view is missing. Check that the adapter migration completed successfully.',
           '42703': 'The development database columns do not match the adapter. Check the adapter migration.',
@@ -48,6 +50,9 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
       if (error instanceof ApiError || error.name === 'AbortError') throw error;
       throw new ApiError('The development HR service could not be reached. Please try again.');
     }
+  }
+  function request(operation, args = {}, { signal } = {}) {
+    return rpc('portal_dev_request', { operation, args }, signal);
   }
   return {
     source: 'supabase',
@@ -71,6 +76,7 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     applications: (pageIndex = 0, options) => request('applications', { pageIndex, pageSize: 20 }, options),
     application: (id, options) => request('application', { id }, options),
     balances: (query, options) => request('balances', query, options),
+    updateBalanceFixture: (args) => rpc('portal_dev_edit_balance_fixture', { args }),
     preview: (query, options) => request('preview', query, options),
     submitLeave: (body) => request('submitLeave', body),
     updateLeave: (id, body) => request('updateLeave', { ...body, id }),

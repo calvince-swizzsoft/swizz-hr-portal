@@ -4,6 +4,11 @@
 .danger:hover { background: #b91c1c; }
 .processing-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, .8fr) auto; }
 .type-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.balance-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+.balance-summary > div { display: flex; flex-direction: column; gap: 8px; padding: 20px 24px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; }
+.balance-summary span { color: #4b5563; font-size: 13px; font-weight: 600; }
+.balance-summary strong { color: #3730a3; font-size: 28px; }
+.fixture-form { margin-top: 20px; }
 .list-row > *, .card-header > *, .form-heading > * { min-width: 0; overflow-wrap: anywhere; }
 .sidebar nav { flex-wrap: wrap; }
 .login-intro { background-image: none; }
@@ -16,5 +21,6 @@
   .login-intro h1 { font-size: 30px; letter-spacing: 0; }
   .type-row { grid-template-columns: minmax(0, 1fr); }
   .processing-grid { grid-template-columns: minmax(0, 1fr); }
+  .balance-summary { grid-template-columns: minmax(0, 1fr); }
   .sidebar nav a { padding: 10px; }
 }

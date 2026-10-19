@@ -97,10 +97,40 @@ function ApplicationDetail({ api }) {
 }
 function Balances({ api }) {
   const [searchParams] = useSearchParams(); const [leaveTypeId, setType] = useState(() => searchParams.get('leaveTypeId') || ''); const [asAt, setAsAt] = useState(() => api.source === 'supabase' ? '2027-01-10' : today()); const [page, setPage] = useState(0);
+  const [editingFixture, setEditingFixture] = useState(false); const [fixtureBusy, setFixtureBusy] = useState(false); const [fixtureError, setFixtureError] = useState(null); const [fixtureSuccess, setFixtureSuccess] = useState('');
   const types = useLoad(signal => api.leaveTypes({ signal }), [api]); const state = useLoad(signal => leaveTypeId && asAt ? api.balances({ leaveTypeId, asAt, pageIndex: page }, { signal }) : null, [api, leaveTypeId, asAt, page]); const data = state.data;
   useRefreshOnFocus(state.retry);
-  return <Card title="Leave balances" action={<button onClick={state.retry} disabled={!leaveTypeId || state.loading}>Refresh balance</button>}><LoadState state={types} /><div className="form-grid"><Field label="Leave type"><select value={leaveTypeId} onChange={e => { setType(e.target.value); setPage(0); }}><option value="">Select leave type</option>{types.data?.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="As at"><input type="date" value={asAt} onChange={e => { setAsAt(e.target.value); setPage(0); }} /></Field></div>
-    {leaveTypeId && asAt ? <LoadState state={state} /> : <div className="empty">Select a leave type and date.</div>}{data && <><Feedback error={data.BalanceError} />{data.Balance && <dl className="details-grid">{['Entitlement', 'Used', 'Reserved', 'Available'].map(key => <div key={key}><dt>{key}</dt><dd>{data.Balance[key]}</dd></div>)}</dl>}<h2>Leave history</h2><div className="list-wrapper">{data.History.length ? data.History.map(item => <div className="list-row" key={item.Id}><span>{dateText(item.Start)} - {dateText(item.End)}</span><span>{item.Reason}</span><span>{({ 1: 'Pending', 2: 'Approved', 4: 'Rejected', 8: 'Recalled', 16: 'Withdrawn' })[item.Status] || 'Unknown'}</span><span>{item.ChargedDaysInYear} days</span></div>) : <div className="empty">No history for this period.</div>}</div><div className="pagination"><button disabled={page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, Math.ceil(data.HistoryCount / 10))}</span><button disabled={(page + 1) * 10 >= data.HistoryCount} onClick={() => setPage(x => x + 1)}>Next</button></div></>}</Card>;
+  const missingFixture = api.source === 'supabase' && state.error?.message.includes('No balance fixture matches this date and page');
+  async function saveFixture(event) {
+    event.preventDefault(); const form = new FormData(event.currentTarget);
+    setFixtureBusy(true); setFixtureError(null); setFixtureSuccess('');
+    try {
+      await api.updateBalanceFixture({
+        leaveTypeId, asAt, pageIndex: page,
+        Entitlement: Number(form.get('Entitlement')), Used: Number(form.get('Used')),
+        Reserved: Number(form.get('Reserved')), Available: Number(form.get('Available')),
+        ...(missingFixture ? { CycleStart: form.get('CycleStart'), CycleEnd: form.get('CycleEnd') } : {}),
+      });
+      setEditingFixture(false); setFixtureSuccess('Balance fixture updated.'); state.retry();
+    } catch (error) {
+      setFixtureError(missingFixture && error.status === 404
+        ? { message: 'Apply the balance fixture creation migration, then try again.' }
+        : error);
+    }
+    finally { setFixtureBusy(false); }
+  }
+  const canEditFixture = api.source === 'supabase' && data?.Balance;
+  function fixtureForm() {
+    return editingFixture && <form className="request-form fixture-form" onSubmit={saveFixture}>
+      <div className="form-heading"><h2>{missingFixture ? 'Add balance fixture' : 'Edit balance fixture'}</h2><span className="muted">Development data only</span></div>
+      <p className="section-intro">{missingFixture ? 'Create a balance scenario for the signed-in employee, selected leave type and date. These values are test data only.' : 'Update this existing fixture. No ERP balance is changed.'}</p>
+      {missingFixture && <div className="form-grid"><Field label="Cycle start"><input name="CycleStart" type="date" required defaultValue={`${asAt.slice(0, 4)}-01-01`} disabled={fixtureBusy} /></Field><Field label="Cycle end"><input name="CycleEnd" type="date" required defaultValue={`${asAt.slice(0, 4)}-12-31`} disabled={fixtureBusy} /></Field></div>}
+      <div className="form-grid">{['Entitlement', 'Used', 'Reserved', 'Available'].map(key => <Field key={key} label={key}><input name={key} type="number" min="0" step="0.01" required defaultValue={data?.Balance?.[key] ?? 0} disabled={fixtureBusy} /></Field>)}</div>
+      <Feedback error={fixtureError} /><div className="row-actions"><button type="button" onClick={() => setEditingFixture(false)} disabled={fixtureBusy}>Cancel</button><button className="primary" disabled={fixtureBusy}>{fixtureBusy ? 'Saving...' : missingFixture ? 'Create fixture' : 'Save fixture'}</button></div>
+    </form>;
+  }
+  return <Card title="Leave balances" action={<div className="row-actions">{(canEditFixture || missingFixture) && <button onClick={() => { setEditingFixture(value => !value); setFixtureError(null); setFixtureSuccess(''); }} disabled={fixtureBusy}>{editingFixture ? 'Cancel edit' : missingFixture ? 'Add fixture' : 'Edit fixture'}</button>}<button onClick={state.retry} disabled={!leaveTypeId || state.loading}>Refresh balance</button></div>}><LoadState state={types} /><div className="form-grid"><Field label="Leave type"><select value={leaveTypeId} onChange={e => { setType(e.target.value); setPage(0); setEditingFixture(false); setFixtureSuccess(''); }}><option value="">Select leave type</option>{types.data?.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="As at"><input type="date" value={asAt} onChange={e => { setAsAt(e.target.value); setPage(0); setEditingFixture(false); setFixtureSuccess(''); }} /></Field></div>
+    {leaveTypeId && asAt ? <LoadState state={state} /> : <div className="empty">Select a leave type and date.</div>}{missingFixture && <p className="section-intro">There is no fixture for this selection yet. Add one with the button above.</p>}{fixtureSuccess && <p className="success" role="status">{fixtureSuccess}</p>}{fixtureForm()}{data && <><Feedback error={data.BalanceError} />{data.Balance && <><div className="balance-summary"><div><span>Leaves left</span><strong>{data.Balance.Available}</strong></div><div><span>Leaves used</span><strong>{data.Balance.Used}</strong></div></div><dl className="details-grid">{['Entitlement', 'Reserved'].map(key => <div key={key}><dt>{key}</dt><dd>{data.Balance[key]}</dd></div>)}</dl></>}<h2>Leave history</h2><div className="list-wrapper">{data.History.length ? data.History.map(item => <div className="list-row" key={item.Id}><span>{dateText(item.Start)} - {dateText(item.End)}</span><span>{item.Reason}</span><span>{({ 1: 'Pending', 2: 'Approved', 4: 'Rejected', 8: 'Recalled', 16: 'Withdrawn' })[item.Status] || 'Unknown'}</span><span>{item.ChargedDaysInYear} days</span></div>) : <div className="empty">No history for this period.</div>}</div><div className="pagination"><button disabled={page === 0} onClick={() => setPage(x => x - 1)}>Prev</button><span>Page {page + 1} of {Math.max(1, Math.ceil(data.HistoryCount / 10))}</span><button disabled={(page + 1) * 10 >= data.HistoryCount} onClick={() => setPage(x => x + 1)}>Next</button></div></>}</Card>;
 }
 function ProcessingNavigation({ api }) {
   const state = useLoad(signal => api.processingApplications({ status: 1, pageIndex: 0, pageSize: 1 }, { signal }), [api]);
