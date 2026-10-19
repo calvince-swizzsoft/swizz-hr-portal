@@ -65,8 +65,10 @@ contracts and migrations before adding screen-specific database access.
 Included: login, ERP initial-password change, profile (employees can edit their
 own name, email and mobile in Supabase mode; editing is hidden in ERP mode until
 an ERP endpoint exists), eligible leave
-types, own application list/details, request submission, pending edits and
-withdrawal, balance/history and preview screens. Supabase passwords are managed
+types, own application list (status only: leave type, dates and status; reasons,
+decision remarks and the details/edit page are not shown), request submission,
+withdrawal of pending requests, balance/history and preview screens. Pending
+requests cannot be edited; withdraw and request again instead. Supabase passwords are managed
 through its dashboard; it does not simulate the ERP initial-password workflow.
 
 Balances and previews in Supabase are fixed scenarios, not live calculations.
@@ -74,7 +76,9 @@ They do not change when requests are submitted or withdrawn. Unknown preview
 dates cannot be submitted; unknown balance scenarios return a clear error.
 The **Remaining** section summarizes, for every eligible leave type and a chosen
 as-at date, the entitlement, days taken, days pending and days remaining, using
-the existing balances operation (no browser calculation). In Supabase mode the
+the existing balances operation (no browser calculation). A summary box adds up
+the remaining and pending days shown; each type is labelled running low at 3 or
+fewer days and "none left" at 0. In Supabase mode the
 figures come from balance fixtures, so only fixture dates such as `2027-01-10`
 show values; with the leave-workflow migration they switch as a request becomes
 pending, approved, rejected or withdrawn.

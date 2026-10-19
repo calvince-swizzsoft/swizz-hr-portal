@@ -17,6 +17,10 @@
 .remaining-days.low { color: #b45309; }
 .remaining-days.none { color: #b91c1c; }
 .remaining-missing { grid-column: 2 / -1; color: #6b7280; }
+.remaining-summary { background: #eef2ff; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }
+.remaining-summary h2 { font-size: 16px; margin-bottom: 6px; }
+.remaining-summary p { margin: 0; font-size: 14px; }
+.remaining-summary .remaining-days { font-size: 24px; margin-right: 4px; }
 @media (max-width: 900px) {
   .list-row.remaining-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .list-row.remaining-row > span > small:first-child { display: block; margin: 0 0 4px; }
