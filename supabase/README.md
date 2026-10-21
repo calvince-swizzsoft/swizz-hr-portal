@@ -62,6 +62,9 @@ Apply migrations in this order (skip already-applied versions):
 6. `20261021000001_balance_fixture_edit.sql`
 7. `20261022000000_balance_fixture_create.sql`
 8. `20261023000000_approver_balance_fixtures.sql`
+9. `20261024000000_leave_type_management.sql`
+10. `20261025000000_leave_type_balance_dedup.sql`
+11. `20261026000000_leave_type_settings.sql`
 
 The contact self-service migration enforces email/mobile-only updates. The earlier profile
 migration has been assigned a distinct version to avoid collision with the
@@ -83,6 +86,18 @@ with contact self-service. If the old fixture version was already applied,
 inspect the applied scripts before recording the corrected version; preserve
 existing migration history and mirror rows. The portal asks for cycle start/end dates
 when adding a fixture.
+
+The leave type management migration adds lowercase `compassionate leave`,
+`maternity leave`, and `paternity leave` to the catalogue. The follow-up removes
+duplicate eligibility links only, retaining type rows and all history. The
+settings migration separates type creation (Settings) from balance setup
+(Leave types): the approver creates a type without balances, then configures an
+existing type by ID with explicit metadata, chosen as-at/cycle dates and
+employee balance fixtures. Duplicate names are rejected only during creation;
+balance setup never attempts to create a type. The migrations retain existing
+mirror rows, including capitalized `Annual leave`, and fabricate no balance
+values. Give Tess the existing 22017 permission if she does not already have it;
+do not grant direct mirror-table writes.
 
 ## Login using an existing employee
 
@@ -174,7 +189,7 @@ Both seeded employees receive leave type `20000000-0000-4000-8000-000000000001`.
 | Scenario | Selection | Expected result |
 | --- | --- | --- |
 | Profile | Sign in as either employee | Own synthetic profile only |
-| Balances | Annual leave, as-at `2027-01-10`, page 0 | Entitlement 21, used 3, available 18; one approved history row. The Supabase balance screen defaults to this fixture date. |
+| Balances | Annual leave, as-at `2027-01-10`, page 0 | Entitlement 21, used 3, available 18; one approved history row. Choose this fixture date in the Supabase balance screen. |
 | Edit balance fixture | Authorized approver opens an employee's request | Edit entitlement, used, reserved and available for the request's employee and leave type. |
 | Add balance fixture | Authorized approver opens a request with no fixture for the selected date | Create a fixture with explicit cycle dates and values for that employee and leave type. |
 | New request | `2027-01-11` to `2027-01-13` | 3 fixture days; allowed unless overlapping |
@@ -213,7 +228,9 @@ approved/rejected synthetic scenarios separately.
 Run `npm test` and `npm run check`. After optional seeding and the base adapter,
 the SQL operator can run `tests/portal-schema.test.sql` in the development
 project. Run `tests/leave-workflow.test.sql` only after the workflow and
-approver-balance migrations are applied. The SQL tests check identity,
+approver-balance migrations are applied. Run
+`tests/leave-type-management.test.sql` after all three leave type migrations.
+The SQL tests check identity,
 ownership and transitions within a transaction and roll back all test writes.
 They do not prove your hosted project's current policies or Auth configuration.
 

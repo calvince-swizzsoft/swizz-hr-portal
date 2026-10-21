@@ -53,6 +53,8 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     application: (id, options) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, options),
     balances: (query, options) => request(`hr-portal/me/leave-balances?${new URLSearchParams(query)}`, options),
     processingBalanceFixture: async () => { throw new ApiError('Balance fixture editing is available only in Supabase development mode.', 400); },
+    createLeaveType: async () => { throw new ApiError('Leave type management is available only in Supabase development mode.', 400); },
+    configureLeaveTypeBalance: async () => { throw new ApiError('Leave type balance setup is available only in Supabase development mode.', 400); },
     preview: (query, options) => request(`hr-portal/me/leave-preview?${new URLSearchParams(query)}`, options),
     submitLeave: (body) => request('hr-portal/me/leave-applications', { method: 'POST', body }),
     updateLeave: (id, body) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, { method: 'PUT', body }),

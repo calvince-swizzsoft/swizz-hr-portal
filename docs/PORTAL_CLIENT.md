@@ -30,6 +30,8 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `processingApplications(query, options)` | `{ status:1 or 2, pageIndex:0, pageSize:20 }` | ApplicationPage; permission checked server-side | GET `hr-portal/processing/leave-applications` |
 | `processingApplication(id, options)` | Processing application ID | `{ Application, Preview }` | GET `hr-portal/processing/leave-applications/{id}` |
 | `processingBalanceFixture(args, options)` | `{ action:'get' or 'save', applicationId, asAt, pageIndex, Entitlement?, Used?, Reserved?, Available?, CycleStart?, CycleEnd? }` | EmployeeLeaveStatistics fixture; processing permission required, Supabase development only | None |
+| `createLeaveType(args)` | `{ Description }` | `{ Id, Description, EmployeeCount }`; permission 22017 required, Supabase development only | None |
+| `configureLeaveTypeBalance(args)` | `{ LeaveTypeId, Entitlement, IsAccrued, UnitType, UnitTypeDescription, ExcludeHolidays, ExcludeWeekends, AsAt, CycleStart, CycleEnd, Used, Reserved, Available }` | `{ Id, Description, EmployeeCount, AsAt }`; permission 22017 required, Supabase development only | None |
 | `authorizeLeave(id, body)` | `{ decision:'approve' or 'reject', remarks }` | Saved LeaveApplication | POST `hr-portal/processing/leave-applications/{id}/authorize` |
 
 `source`, `loginLabel` and `canEditProfile` are presentation metadata; screens
@@ -165,6 +167,17 @@ New fixtures require cycle start/end dates containing the as-at date. Values
 must be nonnegative numbers; `Available` is mirrored to `Remaining` and `Used`
 to `TakenDays`. This does not update ERP balances; the ERP adapter rejects this
 development-only operation.
+
+Approvers with permission 22017 create leave types under **Settings** using
+`createLeaveType`. The operation rejects duplicate names and does not create
+balances. **Leave types** uses `configureLeaveTypeBalance` to configure an
+existing type by ID, without attempting to create it again. It adds an
+all-employee fixture for the chosen as-at date and updates that type's metadata.
+Fixture dates are not limited to January 2027. These writes stay in the
+development mirrors and never update ERP. Leave submissions still need explicit
+matching preview fixtures. The deduplication migration removes only redundant
+eligibility links and preserves mirror/history rows, including capitalized
+`Annual leave`.
 
 The optional workflow migration switches explicitly configured balance snapshots
 atomically on submit/edit/withdraw/approve/reject. It does not recalculate

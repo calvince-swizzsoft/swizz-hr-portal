@@ -88,6 +88,47 @@ figures come from balance fixtures, so only fixture dates such as `2027-01-10`
 show values; with the leave-workflow migration they switch as a request becomes
 pending, approved, rejected or withdrawn.
 
+In Supabase development mode, an approver with permission 22017 creates
+synthetic leave types in **Settings**. **Leave types** lists each type once and
+provides the separate **Set up balance** action for existing types. The
+development migration adds **compassionate leave**, **maternity leave**, and
+**paternity leave** to the catalogue and makes them eligible for unlocked
+employees. Balance setup requires explicit metadata, an as-at date, cycle
+start/end and balance values; no numeric entitlement is invented. Dates are
+selectable and are not fixed to January 2027; employees choose the fixture's
+as-at date to view it. This does not affect ERP data.
+The existing **Annual leave** development fixture remains 21 days and the
+leave-types list shows its yearly entitlement.
+
+Apply the new type and balance migrations in order:
+[`20261024000000_leave_type_management.sql`](supabase/migrations/20261024000000_leave_type_management.sql),
+[`20261025000000_leave_type_balance_dedup.sql`](supabase/migrations/20261025000000_leave_type_balance_dedup.sql),
+and
+[`20261026000000_leave_type_settings.sql`](supabase/migrations/20261026000000_leave_type_settings.sql),
+after the existing-mirror, workflow and approver-balance migrations. These keep
+the capitalized **Annual leave** mirror row and history; duplicate
+case-insensitive type rows are removed from employee eligibility without
+deleting their underlying records. The final migration installs separate
+Settings/create and existing-type balance operations and removes the old
+combined operation.
+
+Tess must have the existing `22017` leave-approver permission to see Settings
+and use **Set up balance**. The SQL migration must be run in Supabase; the
+portal does not apply migrations automatically.
+
+On the leave form, employees can select start and end dates independently of
+balance fixtures; changing the leave type no longer clears those dates. The
+existing preview operation still validates the request, but its calculated day
+and balance details are not displayed. Supabase mode still requires an exact
+matching preview fixture for submission; it does not calculate arbitrary date
+ranges. Existing balance fixtures are preserved.
+
+The leave form also has a draft-only work handover section. The coworker
+directory and supporting-document upload are not connected to the HR service,
+so handover notes and selected files are not saved or sent. Submitting a leave
+request is blocked while handover notes or a file are present; clear them to
+submit without handover details.
+
 Approver accounts: after sign-in the portal asks whether the user may read the
 pending processing queue (permission 22017). If so, the sidebar adds a
 **Leave approvals** section with **Approvals** next to the employee pages, and
