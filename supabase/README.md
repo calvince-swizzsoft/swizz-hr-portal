@@ -201,20 +201,30 @@ Both seeded employees receive leave type `20000000-0000-4000-8000-000000000001`.
 
 ## Set up your own development account
 
-A newly linked account starts with no eligibility or balance fixtures, so the
-portal shows "No leave types available" and "No balance fixture matches this
-date and page". To give one account usable data, open `dev-user-setup.sql`,
-replace `YOUR-EMAIL` with the account's exact email from Authentication > Users,
-and run the whole file in a new SQL Editor query.
+A newly linked account starts with no eligibility or fixtures, so the portal
+shows "No leave types available", "No balance fixture matches this date and
+page" and "No preview fixture matches these dates". To give one account usable
+data, open `dev-user-setup.sql`, replace `YOUR-EMAIL` with the account's exact
+email from Authentication > Users, and run the whole file in a new SQL Editor
+query. Apply the adapter and leave-workflow migrations first.
 
-It grants that account's employee every existing leave type and adds an opening
-balance as at `2027-01-10` (the leave type's entitlement, nothing used or
-reserved) for each type whose `source_payload` has an `Entitlement`. Existing
-rows are kept; nothing is updated or deleted. The result row shows the number of
-leave types, balances created for that date, and types skipped for lacking an
-entitlement. If no linked employee matches the email, it stops with an error and
-changes nothing. Select `2027-01-10` as the as-at date in the portal. Request
-previews are not added, so leave requests still need preview fixtures.
+For that account's employee it grants every existing leave type and, for each
+type whose `source_payload` has an `Entitlement`, adds:
+
+| Fixture | Value |
+| --- | --- |
+| Opening balance | As at `2027-01-10`: the type's entitlement, nothing used or reserved |
+| Request `2027-01-11` to `2027-01-13` | 3 days; submittable if the entitlement covers it |
+| Request `2027-01-18` to `2027-01-19` | 2 days; submittable if the entitlement covers it |
+| After each request | Pending reserves the days, approved uses them, rejected or withdrawn returns to the opening balance |
+
+Existing rows are kept; nothing is updated or deleted. If no linked employee
+matches the email, it stops with an error and changes nothing. The result row
+shows leave types, opening balances, request scenarios, types skipped for lacking
+an entitlement, and `other_approvers`: leave requests can only be submitted when
+at least one other active account has permission 22017. As with the seed, each
+employee can have one active request per leave type, other dates cannot be
+submitted, and balances are shown as at `2027-01-10`.
 
 ## Security and verification
 
