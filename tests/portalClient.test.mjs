@@ -84,6 +84,29 @@ test('processing balance fixture updates use the approver RPC and ERP refuses th
   const erp = createPortalClient({ source: 'erp' });
   await assert.rejects(erp.processingBalanceFixture(args), /only in Supabase development mode/);
 });
+test('settings create types separately from configuring existing type balances', async () => {
+  const supabase = fakeSupabase((operation, name) => ({
+    success: true,
+    data: name === 'portal_dev_create_leave_type'
+      ? { Id: 'new-type', Description: 'Study leave', EmployeeCount: 2 }
+      : { Id: 'new-type', Description: 'Study leave', EmployeeCount: 2, AsAt: '2026-10-21' },
+  }));
+  const api = createPortalClient({ source: 'supabase', supabase });
+  await api.login({ UserName: 'approver@example.test', Password: 'test-only' });
+  assert.deepEqual(await api.createLeaveType({ Description: 'Study leave' }),
+    { Id: 'new-type', Description: 'Study leave', EmployeeCount: 2 });
+  const args = { LeaveTypeId: 'new-type', Entitlement: 5, IsAccrued: false,
+    UnitType: 3, UnitTypeDescription: 'Yearly', ExcludeHolidays: true, ExcludeWeekends: true,
+    AsAt: '2026-10-21', CycleStart: '2026-01-01', CycleEnd: '2026-12-31',
+    Used: 0, Reserved: 0, Available: 5 };
+  assert.deepEqual(await api.configureLeaveTypeBalance(args),
+    { Id: 'new-type', Description: 'Study leave', EmployeeCount: 2, AsAt: '2026-10-21' });
+  assert.deepEqual(supabase.calls[1], ['portal_dev_create_leave_type', { args: { Description: 'Study leave' } }]);
+  assert.deepEqual(supabase.calls[2], ['portal_dev_configure_leave_type_balance', { args }]);
+  const erp = createPortalClient({ source: 'erp' });
+  await assert.rejects(erp.createLeaveType({ Description: 'Study leave' }), /only in Supabase development mode/);
+  await assert.rejects(erp.configureLeaveTypeBalance(args), /only in Supabase development mode/);
+});
 test('invalid source fails closed and ERP errors never call Supabase', async () => {
   assert.throws(()=>createPortalClient({source:'unknown'}),/Unsupported/);
   const supabase = fakeSupabase();
@@ -130,4 +153,8 @@ test('Supabase setup failures report a safe actionable code without raw database
     && /adapter migration/.test(error.message) && !/Raw database/.test(error.message));
   await assert.rejects(api.processingBalanceFixture({ action: 'get', applicationId: application.Id, asAt: '2027-01-10', pageIndex: 0 }),
     error => error.code === 'PGRST202' && /approver balance fixture migration/.test(error.message));
+  await assert.rejects(api.createLeaveType({ Description: 'Study leave' }),
+    error => error.code === 'PGRST202' && /leave type settings migration/.test(error.message));
+  await assert.rejects(api.configureLeaveTypeBalance({}),
+    error => error.code === 'PGRST202' && /leave type settings migration/.test(error.message));
 });
