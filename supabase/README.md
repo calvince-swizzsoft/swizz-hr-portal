@@ -184,6 +184,23 @@ Both seeded employees receive leave type `20000000-0000-4000-8000-000000000001`.
 | Foreign application | Read/edit/withdraw | 404 and no mutation |
 | Withdraw | Own pending request | Status 16; further editing denied |
 
+## Set up your own development account
+
+A newly linked account starts with no eligibility or balance fixtures, so the
+portal shows "No leave types available" and "No balance fixture matches this
+date and page". To give one account usable data, open `dev-user-setup.sql`,
+replace `YOUR-EMAIL` with the account's exact email from Authentication > Users,
+and run the whole file in a new SQL Editor query.
+
+It grants that account's employee every existing leave type and adds an opening
+balance as at `2027-01-10` (the leave type's entitlement, nothing used or
+reserved) for each type whose `source_payload` has an `Entitlement`. Existing
+rows are kept; nothing is updated or deleted. The result row shows the number of
+leave types, balances created for that date, and types skipped for lacking an
+entitlement. If no linked employee matches the email, it stops with an error and
+changes nothing. Select `2027-01-10` as the as-at date in the portal. Request
+previews are not added, so leave requests still need preview fixtures.
+
 ## Security and verification
 
 Browser users cannot edit table rows directly. The security-definer RPC pins
