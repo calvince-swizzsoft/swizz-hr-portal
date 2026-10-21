@@ -88,6 +88,19 @@ figures come from balance fixtures, so only fixture dates such as `2027-01-10`
 show values; with the leave-workflow migration they switch as a request becomes
 pending, approved, rejected or withdrawn.
 
+On the leave form, selecting a leave type and start date loads the applicable
+balance fixture and defaults the end date to that balance cycle's end. Employees
+can adjust the end date. The existing preview operation still validates the
+request, but its calculated day and balance details are not displayed. Supabase
+mode requires an explicit balance fixture and an exact matching preview fixture;
+it does not calculate arbitrary date ranges.
+
+The leave form also has a draft-only work handover section. The coworker
+directory and supporting-document upload are not connected to the HR service,
+so handover notes and selected files are not saved or sent. Submitting a leave
+request is blocked while handover notes or a file are present; clear them to
+submit without handover details.
+
 Approver accounts: after sign-in the portal asks whether the user may read the
 pending processing queue (permission 22017). If so, the sidebar adds a
 **Leave approvals** section with **Approvals** next to the employee pages, and

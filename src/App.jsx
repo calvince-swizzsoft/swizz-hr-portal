@@ -4,6 +4,8 @@ import { createPortalClient } from './lib/portalClient.js';
 
 const dateText = value => value ? new Date(String(value).slice(0, 10) + 'T12:00:00').toLocaleDateString() : '\u2014';
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const supabaseBalanceFixtureDate = '2027-01-10';
+const nextDate = value => { const [year, month, day] = value.split('-').map(Number); const date = new Date(Date.UTC(year, month - 1, day + 1)); return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`; };
 function Feedback({ error }) { return error ? <div className="feedback" role="alert">{error.message || error}{error.correlationId && <small>Reference: {error.correlationId}</small>}</div> : null; }
 function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label>; }
 function Card({ title, children, action }) { return <section className="page-card"><header className="card-header"><h1>{title}</h1>{action}</header>{children}</section>; }
@@ -128,7 +130,7 @@ function ApplicationDetail({ api }) {
   return <Card title="Leave application" action={<div className="row-actions"><button onClick={state.retry} disabled={state.loading}>Refresh</button><button onClick={() => navigate('/leave')}>Back</button></div>}><LoadState state={state} />{item && <>{editing ? <LeaveForm key={item.Id} api={api} types={state.data.types} application={item} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); state.retry(); }} /> : <><dl className="details-grid">{[['Leave type', item.LeaveTypeDescription], ['Status', item.StatusDescription], ['Start', dateText(item.Start)], ['End', dateText(item.End)], ['Reason', item.Reason], ['Decision remarks', item.AuthorizationRemarks], ['Decision date', dateText(item.AuthorizedDate)], ['Recall remarks', item.RecallRemarks]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl>{item.Status === 1 && <button className="primary" onClick={() => setEditing(true)}>Edit application</button>}</>}</>}</Card>;
 }
 function Balances({ api }) {
-  const [searchParams] = useSearchParams(); const [leaveTypeId, setType] = useState(() => searchParams.get('leaveTypeId') || ''); const [asAt, setAsAt] = useState(() => api.source === 'supabase' ? '2027-01-10' : today()); const [page, setPage] = useState(0);
+  const [searchParams] = useSearchParams(); const [leaveTypeId, setType] = useState(() => searchParams.get('leaveTypeId') || ''); const [asAt, setAsAt] = useState(() => api.source === 'supabase' ? supabaseBalanceFixtureDate : today()); const [page, setPage] = useState(0);
   const types = useLoad(signal => api.leaveTypes({ signal }), [api]); const state = useLoad(signal => leaveTypeId && asAt ? api.balances({ leaveTypeId, asAt, pageIndex: page }, { signal }) : null, [api, leaveTypeId, asAt, page]); const data = state.data;
   useRefreshOnFocus(state.retry);
   return <Card title="Leave balances" action={<button onClick={state.retry} disabled={!leaveTypeId || state.loading}>Refresh balance</button>}><LoadState state={types} /><div className="form-grid"><Field label="Leave type"><select value={leaveTypeId} onChange={e => { setType(e.target.value); setPage(0); }}><option value="">Select leave type</option>{types.data?.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="As at"><input type="date" value={asAt} onChange={e => { setAsAt(e.target.value); setPage(0); }} /></Field></div>
@@ -248,20 +250,71 @@ function ApprovalReview({ api, profile }) {
 }
 function LeaveForm({ api, types, application, onClose, onSaved }) {
   const [form, setForm] = useState({ leaveTypeId: application?.LeaveTypeId || '', start: application?.Start?.slice(0, 10) || '', end: application?.End?.slice(0, 10) || '', reason: application?.Reason || '' }); const [busy, setBusy] = useState(false); const [error, setError] = useState(null);
-  const invalidDates = !!form.start && !!form.end && form.end < form.start;
+  const [handoverNotes, setHandoverNotes] = useState(''); const [handoverFile, setHandoverFile] = useState(null);
+  const handoverFileInput = useRef(null);
+  const [endTouched, setEndTouched] = useState(false);
+  const defaultEndFromCycle = useRef(false);
+  const invalidDates = !!form.start && !!form.end && form.end <= form.start;
+  const hasHandoverDraft = !!handoverNotes.trim() || !!handoverFile;
+  const balance = useLoad(signal => !form.leaveTypeId || !form.start ? null : api.balances({
+    leaveTypeId: form.leaveTypeId,
+    asAt: api.source === 'supabase' ? supabaseBalanceFixtureDate : form.start,
+    pageIndex: 0,
+  }, { signal }), [api, form.leaveTypeId, form.start]);
   const preview = useLoad(signal => !form.leaveTypeId || !form.start || !form.end || invalidDates ? null : api.preview({ leaveTypeId: form.leaveTypeId, start: form.start, end: form.end, ...(application ? { excludedId: application.Id } : {}) }, { signal }), [api, form.leaveTypeId, form.start, form.end, application?.Id, invalidDates]);
-  useRefreshOnFocus(preview.retry);
-  function set(field, value) { setError(null); setForm(current => ({ ...current, [field]: value })); }
+  useRefreshOnFocus(() => { balance.retry(); preview.retry(); });
+  useEffect(() => {
+    const end = balance.data?.Balance?.End?.slice(0, 10);
+    if (!end || endTouched || !defaultEndFromCycle.current) return;
+    defaultEndFromCycle.current = false;
+    setForm(current => ({ ...current, end }));
+  }, [balance.data, endTouched]);
+  function set(field, value) {
+    setError(null);
+    if (field === 'start' || field === 'leaveTypeId') {
+      defaultEndFromCycle.current = true;
+      setEndTouched(false);
+      setForm(current => ({ ...current, [field]: value, end: '' }));
+      return;
+    }
+    if (field === 'end') {
+      defaultEndFromCycle.current = false;
+      setEndTouched(true);
+    }
+    setForm(current => ({ ...current, [field]: value }));
+  }
   async function submit(event) {
     event.preventDefault();
     if (busy) return;
+    if (hasHandoverDraft) { setError(new Error('Handover details and supporting documents are not connected to the HR service yet. Clear the draft to submit this leave request.')); return; }
     if (!form.reason.trim()) { setError(new Error('Enter a reason for this leave request.')); return; }
     if (invalidDates || preview.loading || !preview.data?.CanSubmit) return;
     setBusy(true); setError(null);
-    try { onSaved(await (application ? api.updateLeave(application.Id, form) : api.submitLeave(form))); }
+    try {
+      const request = { leaveTypeId: form.leaveTypeId, start: form.start, end: form.end, reason: form.reason };
+      onSaved(await (application ? api.updateLeave(application.Id, request) : api.submitLeave(request)));
+    }
     catch (e) { setError(e); }
     finally { setBusy(false); }
   }
-  return <form className="request-form" onSubmit={submit}><div className="form-heading"><h2>{application ? 'Edit leave' : 'Request leave'}</h2><button type="button" onClick={onClose} disabled={busy}>Close</button></div><Feedback error={error} /><div className="form-grid"><Field label="Leave type"><select required value={form.leaveTypeId} onChange={e => set('leaveTypeId', e.target.value)} disabled={busy}><option value="">Select leave type</option>{types.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field><Field label="Start date"><input required type="date" value={form.start} onChange={e => set('start', e.target.value)} disabled={busy} /></Field><Field label="End date"><input required type="date" min={form.start} value={form.end} onChange={e => set('end', e.target.value)} disabled={busy} /></Field></div><Field label="Reason"><textarea required maxLength={256} rows={3} value={form.reason} onChange={e => set('reason', e.target.value)} disabled={busy} /></Field><LoadState state={preview} />
-    {invalidDates && <Feedback error="End date must be on or after the start date." />}{preview.data && <div className="balance-preview"><strong>{preview.data.RequestedDays} chargeable day(s)</strong><Feedback error={preview.data.Error} />{preview.data.Cycles.map((cycle, i) => <div key={i}><span>{dateText(cycle.Start)} - {dateText(cycle.End)}</span><p>Available: {cycle.Available} | Requested: {cycle.Requested} | Remaining: {cycle.Remaining}</p></div>)}</div>}<button className="primary" disabled={busy || invalidDates || preview.loading || !preview.data?.CanSubmit}>{busy ? 'Saving...' : application ? 'Save changes' : 'Submit request'}</button></form>;
+  return <form className="request-form" onSubmit={submit}>
+    <div className="form-heading"><h2>{application ? 'Edit leave' : 'Request leave'}</h2><button type="button" onClick={onClose} disabled={busy}>Close</button></div>
+    <Feedback error={error} />
+    <div className="form-grid">
+      <Field label="Leave type"><select required value={form.leaveTypeId} onChange={e => set('leaveTypeId', e.target.value)} disabled={busy}><option value="">Select leave type</option>{types.map(type => <option key={type.Id} value={type.Id}>{type.Description}</option>)}</select></Field>
+      <Field label="Start date"><input required type="date" value={form.start} onChange={e => set('start', e.target.value)} disabled={busy} /></Field>
+      <Field label="End date"><input required type="date" min={form.start ? nextDate(form.start) : undefined} value={form.end} onChange={e => set('end', e.target.value)} disabled={busy} /></Field>
+    </div>
+    {form.leaveTypeId && form.start && <><LoadState state={balance} />{balance.data?.BalanceError && <Feedback error={balance.data.BalanceError} />}{balance.data && !balance.data.Balance?.End && !balance.data.BalanceError && <Feedback error="The selected leave type has no balance-cycle end date." />}</>}
+    <Field label="Reason"><textarea required maxLength={256} rows={3} value={form.reason} onChange={e => set('reason', e.target.value)} disabled={busy} /></Field>
+    <h2>Work handover</h2>
+    <p className="help" role="status">Handover details and documents are a local draft only and are not sent to HR. The colleague directory and document upload are not connected yet.</p>
+    <Field label="Colleague receiving the handover"><select value="" disabled><option value="">Colleague directory unavailable</option></select></Field>
+    <Field label="Handover notes"><textarea rows={3} value={handoverNotes} onChange={e => { setError(null); setHandoverNotes(e.target.value); }} disabled={busy} /></Field>
+    <Field label="Supporting document"><input ref={handoverFileInput} type="file" onChange={e => { setError(null); setHandoverFile(e.target.files?.[0] || null); }} disabled={busy} />{handoverFile && <><small>{handoverFile.name} (not uploaded)</small><button type="button" onClick={() => { setError(null); setHandoverFile(null); if (handoverFileInput.current) handoverFileInput.current.value = ''; }} disabled={busy}>Clear selected file</button></>}</Field>
+    <LoadState state={preview} />
+    {invalidDates && <Feedback error="End date must be after the start date." />}
+    {preview.data && !preview.data.CanSubmit && <Feedback error={preview.data.Error || 'The selected leave dates cannot be submitted.'} />}
+    <button className="primary" disabled={busy || hasHandoverDraft || invalidDates || preview.loading || !preview.data?.CanSubmit}>{busy ? 'Saving...' : hasHandoverDraft ? 'Clear handover draft to submit' : application ? 'Save changes' : 'Submit request'}</button>
+  </form>;
 }
