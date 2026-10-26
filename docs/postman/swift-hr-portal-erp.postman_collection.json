@@ -1,0 +1,184 @@
+{
+  "info": {
+    "name": "Swift HR Portal – ERP API",
+    "description": "Requests the HR portal makes to the WebApplication1 ERP API (see docs/PORTAL_CLIENT.md).\n\nSetup: open the collection's Variables tab and set `username` and `password` in the CURRENT VALUE column only (current values are not exported or synced). Never save real passwords in this file.\n\nRun `1. Auth > Sign in` first: it stores the session token in `token`, which every other request sends as a Bearer token. If the response asks for a password change, run `Change initial password` (set `newPassword` first).\n\nFolders 1–3 and 5a only read data. Folder 4 and 5b change LIVE ERP records (leave requests, approvals, contact details) and may notify people — run them only with explicit authorization for that action.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://fosa-api.ngrok.dev/api" },
+    { "key": "username", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "newPassword", "value": "" },
+    { "key": "token", "value": "" },
+    { "key": "leaveTypeId", "value": "" },
+    { "key": "applicationId", "value": "" },
+    { "key": "asAt", "value": "2026-10-26" },
+    { "key": "start", "value": "" },
+    { "key": "end", "value": "" },
+    { "key": "pageIndex", "value": "0" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Sign in",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "const body = pm.response.json();",
+              "const data = body && Object.prototype.hasOwnProperty.call(body, 'data') ? body.data : body;",
+              "if (data && data.token) { pm.collectionVariables.set('token', data.token); console.log('Token stored.'); }",
+              "else if (data && data.requiresPasswordChange) { console.log('Password change required: run Change initial password.'); }",
+              "pm.test('Signed in or asked to change password', () => pm.expect(pm.response.code).to.equal(200));"
+            ] }
+          }],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"UserName\": \"{{username}}\",\n  \"Password\": \"{{password}}\"\n}" },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "POST auth/login. Success returns a token (stored automatically). Temporary passwords return requiresPasswordChange instead."
+          }
+        },
+        {
+          "name": "Change initial password",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "const body = pm.response.json();",
+              "const data = body && Object.prototype.hasOwnProperty.call(body, 'data') ? body.data : body;",
+              "if (data && data.token) { pm.collectionVariables.set('token', data.token); pm.collectionVariables.set('password', pm.collectionVariables.get('newPassword')); console.log('Password changed and token stored.'); }"
+            ] }
+          }],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"UserName\": \"{{username}}\",\n  \"CurrentPassword\": \"{{password}}\",\n  \"NewPassword\": \"{{newPassword}}\",\n  \"ConfirmPassword\": \"{{newPassword}}\"\n}" },
+            "url": "{{baseUrl}}/auth/change-initial-password",
+            "description": "POST auth/change-initial-password. Replaces a temporary password; changes the real ERP password."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. My profile (read)",
+      "item": [
+        {
+          "name": "Get my profile",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/me", "description": "GET hr-portal/me. 403 means the account is not linked to an active employee." }
+        }
+      ]
+    },
+    {
+      "name": "3. My leave (read)",
+      "item": [
+        {
+          "name": "Leave types",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "const body = pm.response.json();",
+              "const types = body && body.data !== undefined ? body.data : body;",
+              "if (Array.isArray(types) && types.length && !pm.collectionVariables.get('leaveTypeId')) { pm.collectionVariables.set('leaveTypeId', types[0].Id); console.log('leaveTypeId set to the first type: ' + types[0].Description); }"
+            ] }
+          }],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/me/leave-types", "description": "GET hr-portal/me/leave-types. Sets leaveTypeId to the first type if it is empty." }
+        },
+        {
+          "name": "My leave applications",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/me/leave-applications?pageIndex={{pageIndex}}&pageSize=20" }
+        },
+        {
+          "name": "One leave application",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/me/leave-applications/{{applicationId}}", "description": "Set applicationId first." }
+        },
+        {
+          "name": "Leave balance",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/me/leave-balances?leaveTypeId={{leaveTypeId}}&asAt={{asAt}}&pageIndex={{pageIndex}}" }
+        },
+        {
+          "name": "Leave preview (days and balance for dates)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/me/leave-preview?leaveTypeId={{leaveTypeId}}&start={{start}}&end={{end}}", "description": "Read-only calculation. Set start and end (YYYY-MM-DD) first." }
+        }
+      ]
+    },
+    {
+      "name": "4. LIVE CHANGES – need authorization",
+      "description": "These change real ERP records and may notify people. Run only with explicit authorization for that specific action.",
+      "item": [
+        {
+          "name": "LIVE – Update my contact details",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"CustomerAddressEmail\": \"name@example.com\",\n  \"CustomerAddressMobileLine\": \"+254700000000\"\n}" },
+            "url": "{{baseUrl}}/hr-portal/me",
+            "description": "PUT hr-portal/me. Only email and mobile are accepted."
+          }
+        },
+        {
+          "name": "LIVE – Submit leave request",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"leaveTypeId\": \"{{leaveTypeId}}\",\n  \"start\": \"{{start}}\",\n  \"end\": \"{{end}}\",\n  \"reason\": \"Test request\"\n}" },
+            "url": "{{baseUrl}}/hr-portal/me/leave-applications"
+          }
+        },
+        {
+          "name": "LIVE – Edit pending leave request",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"leaveTypeId\": \"{{leaveTypeId}}\",\n  \"start\": \"{{start}}\",\n  \"end\": \"{{end}}\",\n  \"reason\": \"Edited test request\"\n}" },
+            "url": "{{baseUrl}}/hr-portal/me/leave-applications/{{applicationId}}"
+          }
+        },
+        {
+          "name": "LIVE – Withdraw pending leave request",
+          "request": { "method": "POST", "header": [], "url": "{{baseUrl}}/hr-portal/me/leave-applications/{{applicationId}}/withdraw" }
+        }
+      ]
+    },
+    {
+      "name": "5a. Approvals (read, approvers only)",
+      "item": [
+        {
+          "name": "Pending requests (needs 22017)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/processing/leave-applications?status=1&pageIndex={{pageIndex}}&pageSize=20" }
+        },
+        {
+          "name": "Approved requests (needs 22018)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/processing/leave-applications?status=2&pageIndex={{pageIndex}}&pageSize=20" }
+        },
+        {
+          "name": "One request for review",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/hr-portal/processing/leave-applications/{{applicationId}}" }
+        }
+      ]
+    },
+    {
+      "name": "5b. LIVE APPROVAL – need authorization",
+      "description": "Approves or rejects a real leave request. Run only with explicit authorization.",
+      "item": [
+        {
+          "name": "LIVE – Approve or reject",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"decision\": \"approve\",\n  \"remarks\": \"\"\n}" },
+            "url": "{{baseUrl}}/hr-portal/processing/leave-applications/{{applicationId}}/authorize",
+            "description": "decision: approve or reject; remarks up to 256 characters."
+          }
+        }
+      ]
+    }
+  ]
+}
