@@ -56,7 +56,7 @@ restart/rebuild and a new sign-in, not changes to screen code.
 ### Testing the ERP API in Postman
 
 Import `docs/postman/swift-hr-portal-erp.postman_collection.json` into Postman.
-It contains every ERP request the portal makes, against
+It contains core ERP requests for the portal, against
 `https://fosa-api.ngrok.dev/api`. In the collection's Variables tab, enter
 `username` and `password` as local, unshared values, then run
 **1. Auth > Sign in**: it stores the session token
@@ -71,7 +71,7 @@ not yet confirmed cannot sign in until an ERP administrator confirms them.
 | 3. My leave | Leave types, applications, one application, balance, preview | No |
 | 4. LIVE CHANGES | Update contact details, submit, edit, withdraw leave | **Yes – live ERP** |
 | 5a. Approvals | Pending (22017), approved (22018), one request | No |
-| 5b. LIVE APPROVAL | Approve or reject | **Yes – live ERP** |
+| 5b. LIVE APPROVAL & RECALL | Approve or reject, recall approved leave | **Yes – live ERP** |
 
 Run **Change initial password**, folder 4, and folder 5b only with explicit
 authorization for that action. Do not run the entire collection against live ERP.
@@ -177,6 +177,7 @@ Apply the new type and balance migrations in order:
 [`20261028000000_allow_requests_without_workflow_scenario.sql`](supabase/migrations/20261028000000_allow_requests_without_workflow_scenario.sql),
 [`20261029000000_fix_leave_type_creation_ambiguity.sql`](supabase/migrations/20261029000000_fix_leave_type_creation_ambiguity.sql),
 [`20261030000000_leave_type_lifecycle_and_balance_edits.sql`](supabase/migrations/20261030000000_leave_type_lifecycle_and_balance_edits.sql),
+then [`20261031000000_restore_explicit_fixture_guards.sql`](supabase/migrations/20261031000000_restore_explicit_fixture_guards.sql),
 after the existing-mirror, workflow and approver-balance migrations. These keep
 the capitalized **Annual leave** mirror row and history; duplicate
 case-insensitive type rows are removed from employee eligibility without
@@ -184,8 +185,8 @@ deleting their underlying records. The final migration installs separate
 Settings/create and existing-type balance operations and removes the old
 combined operation. The lifecycle migration supports type renaming, reversible
 archiving, restoring, and editing balance fixtures for an existing date. The
-no-preview migration allows leave requests with no preview fixture; development
-mode reports no calculated leave days/balance in that case.
+final fixture-guard migration supersedes the permissive no-preview/no-workflow
+migrations: requests require explicit preview and workflow scenarios.
 
 Tess must have the existing `22017` leave-approver permission to manage
 development leave types and balances in Settings. General account settings are
@@ -194,9 +195,9 @@ portal does not apply migrations automatically.
 
 On the leave form, employees can select start and end dates independently of
 balance fixtures; changing the leave type no longer clears those dates. In
-Supabase mode, a request can be submitted without matching preview or workflow
-fixtures. The development portal does not calculate leave days or balance
-transitions when those scenarios are absent; overlap checks still apply.
+Supabase mode, submission requires matching preview and workflow fixtures.
+Unknown dates are blocked without inventing leave days or balance transitions;
+overlap checks still apply.
 Existing balance fixtures are preserved.
 
 The leave form also has a draft-only work handover section. The coworker
