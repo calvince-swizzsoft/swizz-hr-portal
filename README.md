@@ -104,8 +104,8 @@ employee-scoped API.
 
 Settings includes an authenticated ERP password change with show/hide controls,
 password-match validation and a non-authoritative strength estimate; the HR
-authentication API applies its own password policy. Theme (Light, Dark or
-System) is stored in the browser. Account preferences (language, display name
+authentication API applies its own password policy. The portal retains the
+Operational light theme. Account preferences (language, display name
 and accessibility options) are stored locally per sign-in name and do not sync
 across devices. Employee
 account details in Settings come from the authenticated `/api/hr-portal/me`
@@ -181,7 +181,7 @@ then [`20261031000000_restore_explicit_fixture_guards.sql`](supabase/migrations/
 after the existing-mirror, workflow and approver-balance migrations. These keep
 the capitalized **Annual leave** mirror row and history; duplicate
 case-insensitive type rows are removed from employee eligibility without
-deleting their underlying records. The final migration installs separate
+deleting their underlying records. The settings migration installs separate
 Settings/create and existing-type balance operations and removes the old
 combined operation. The lifecycle migration supports type renaming, reversible
 archiving, restoring, and editing balance fixtures for an existing date. The

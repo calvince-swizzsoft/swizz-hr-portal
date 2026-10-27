@@ -161,17 +161,14 @@ Adapters reject with `ApiError` carrying `message`, `status`, `code` and nullabl
 transport failures are sanitized; unexpected SQL failures are not shown raw.
 
 Synthetic fixtures do not recalculate balances, apply calendar rules, accrue
-entitlements, enqueue notifications or prove approval availability. Requests
-can be submitted without a matching preview fixture; unknown previews report
-`PreviewAvailable=false`, `CanSubmit=true`, and zero calculated days/balance.
-Leave-request writes still check ownership, eligibility, pending status,
-reason/date formats and overlap. The development workflow wrapper also requires
-a matching workflow scenario for balance/history transitions; approvers may still
-decide a request without one, but synthetic balances will not change.
-Submitting or withdrawing requests without workflow fixtures does not
-recalculate balance fixtures. Test real ERP calculations,
-concurrency, approval availability and notification handling separately before
-switching live.
+entitlements, enqueue notifications or prove approval availability. Apply
+`20261031000000_restore_explicit_fixture_guards.sql` after all earlier migrations.
+Requests require a matching preview fixture and workflow scenario. Unknown previews
+report `PreviewAvailable=false`, `CanSubmit=false`; no request is created.
+Writes retain ownership, eligibility, pending status, reason/date and overlap
+checks. Approval requires a workflow link, and configured balance transitions
+succeed or fail atomically with the decision. Test real ERP calculations,
+concurrency, approval availability and notifications separately before rollout.
 
 In Supabase development mode, a user with processing permission can edit or
 create a fixture for the employee and leave type attached to a selected request
@@ -204,9 +201,7 @@ resaving an existing date edits its values while preserving fixture history and
 requested-day values. Settings also uses `manageLeaveTypes` to rename, archive
 or restore types. Archiving removes eligibility for new leave requests but
 preserves the type row, applications and balance fixtures. These writes
-stay in the development mirrors and never update ERP. Leave submissions do not need a
-matching preview fixture; without one, requested days and balance are not
-calculated. The deduplication migration removes only redundant eligibility
+stay in the development mirrors and never update ERP. Leave submissions require explicit preview and workflow fixtures. The deduplication migration removes only redundant eligibility
 links and preserves mirror/history rows, including capitalized `Annual leave`.
 
 The optional workflow migration switches explicitly configured balance snapshots

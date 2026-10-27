@@ -75,6 +75,7 @@ Apply migrations in this order (skip already-applied versions):
 13. `20261028000000_allow_requests_without_workflow_scenario.sql`
 14. `20261029000000_fix_leave_type_creation_ambiguity.sql`
 15. `20261030000000_leave_type_lifecycle_and_balance_edits.sql`
+16. `20261031000000_restore_explicit_fixture_guards.sql`
 
 The contact self-service migration enforces email/mobile-only updates. The earlier profile
 migration has been assigned a distinct version to avoid collision with the
@@ -114,10 +115,12 @@ type. The migrations retain existing mirror rows, including capitalized
 `Annual leave`, and fabricate no balance values. Give Tess the existing 22017
 permission if she does not already have it; do not grant direct mirror-table
 writes.
-The no-preview migration allows submitting without a matching preview fixture.
-The final migration also allows dates without workflow scenarios; leave-day and
-balance/history transitions are not calculated when such scenario fixtures are
-absent. Existing overlap, ownership, approver and self-approval checks remain.
+Apply `20261031000000_restore_explicit_fixture_guards.sql` last. It supersedes
+the permissive no-preview and no-workflow migrations: submissions require explicit
+preview and workflow fixtures, and decisions require a linked scenario. Unknown
+dates fail without creating records. Existing overlap, ownership, approver and
+self-approval checks remain. This migration changes functions only and preserves
+existing mirror rows and fixtures.
 
 ## Login using an existing employee
 

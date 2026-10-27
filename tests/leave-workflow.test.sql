@@ -43,30 +43,24 @@ begin
   ), 'The no-preview scenario must have its workflow fixture';
   perform set_config('request.jwt.claim.sub',employee_user::text,true);
   response:=public.portal_dev_request('preview',body||'{"start":"2027-05-01","end":"2027-05-02"}');
-  assert (response#>>'{data,CanSubmit}')::boolean
+  assert not (response#>>'{data,CanSubmit}')::boolean
     and not (response#>>'{data,PreviewAvailable}')::boolean,response::text;
   response:=public.portal_dev_request('submitLeave',body||'{"start":"2027-05-01","end":"2027-05-02"}');
-  assert (response->>'success')::boolean,response::text;
-  saved_id:=response#>>'{data,Id}';
-  response:=public.portal_dev_request('withdraw',jsonb_build_object('id',saved_id));
-  assert (response#>>'{data,Status}')::integer=16,response::text;
+  assert (response->>'status')::integer=400,response::text;
+  assert not exists(select 1 from public.leave_application_mirror
+    where employee_erp_id='10000000-0000-4000-8000-000000000001'
+      and start_date='2027-05-01'), 'Missing preview must not create a request';
   delete from public.portal_mirror_workflow_fixtures
     where employee_id='10000000-0000-4000-8000-000000000001'
       and leave_type_id='20000000-0000-4000-8000-000000000001'
       and start_date='2027-05-01' and end_date='2027-05-02';
 
   response:=public.portal_dev_request('submitLeave',body||'{"start":"2027-06-01","end":"2027-06-02"}');
-  assert (response->>'success')::boolean,response::text;
-  saved_id:=response#>>'{data,Id}';
-  assert not exists(select 1 from public.portal_mirror_workflow_requests where application_id=saved_id),
-    'A request without a workflow fixture is not linked to a fabricated scenario';
-  perform set_config('request.jwt.claim.sub',approver_user::text,true);
-  response:=public.portal_dev_request('authorizeLeave',jsonb_build_object(
-    'id',saved_id,'decision','approve','remarks','Approved without balance scenario'));
-  assert (response#>>'{data,Status}')::integer=2,response::text;
-  assert (select status from public.leave_application_mirror where erp_id=saved_id)=2,
-    'Approver can process a request without a workflow scenario';
-  perform set_config('request.jwt.claim.sub',employee_user::text,true);
+  assert (response->>'status')::integer=400
+    and response->>'message' like '%No workflow scenario%',response::text;
+  assert not exists(select 1 from public.leave_application_mirror
+    where employee_erp_id='10000000-0000-4000-8000-000000000001'
+      and start_date='2027-06-01'), 'Missing workflow must not create a request';
 
   response:=public.portal_dev_request('submitLeave',body);
   assert (response->>'success')::boolean,response::text;

@@ -170,9 +170,9 @@ user with permission 22017, matching the ERP's separate-approver prerequisite.
 - One active workflow request per employee and leave type, including an approved
   request. Do not test multiple concurrent allocations with this fixture set.
 - The two successful seeded date ranges have complete preview and balance
-  transitions. Other eligible date ranges may be submitted and processed, but
-  without workflow fixtures they do not change synthetic balance/history
-  snapshots, and without preview fixtures their chargeable days are unknown.
+  transitions. Other date ranges require explicit preview and workflow fixtures before
+  submission. Apply `20261031000000_restore_explicit_fixture_guards.sql` last
+  to retain these guards.
 - Editing stays within the same leave type in this development scenario.
 - Balances update for the configured as-at date/page, not arbitrary dates/pages.
 - History snapshots represent the configured scenario, not an accumulated ledger

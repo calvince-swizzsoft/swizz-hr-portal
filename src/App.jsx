@@ -5,17 +5,7 @@ import { uniqueLeaveTypes } from './lib/leaveTypes.js';
 import packageInfo from '../package.json';
 
 const DEFAULT_PREFERENCES = { language: 'en', displayName: '', textSize: 'medium', highContrast: false, reduceMotion: false };
-const DEFAULT_THEME = 'light';
 const preferenceKey = userName => `swizz-hr-portal-preferences:${encodeURIComponent(String(userName || 'guest').trim().toLowerCase())}`;
-function loadAppearance(key, options, fallback) {
-  try {
-    const stored = localStorage.getItem(key);
-    return options.includes(stored) ? stored : fallback;
-  } catch (error) {
-    console.warn('Saved appearance preferences could not be read; using defaults on this device.', error);
-    return fallback;
-  }
-}
 function loadPreferences(userName) {
   try {
     const stored = JSON.parse(localStorage.getItem(preferenceKey(userName)) || '{}');
@@ -86,22 +76,15 @@ function useRefreshOnFocus(refresh) {
 }
 export default function App() {
   const [profile, setProfile] = useState(null); const [userName, setUserName] = useState(''); const [isApprover, setIsApprover] = useState(false); const [notice, setNotice] = useState('');
-  const [theme, setTheme] = useState(() => loadAppearance('swizz-hr-portal-theme', ['light', 'dark', 'system'], DEFAULT_THEME));
   const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES); const navigate = useNavigate(); const { pathname } = useLocation();
   useEffect(() => {
     const root = document.documentElement;
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => {
-      root.dataset.theme = theme === 'system' ? media.matches ? 'dark' : 'light' : theme;
-      root.dataset.displayName = preferences.displayName;
-      root.dataset.textSize = preferences.textSize;
-      root.dataset.highContrast = String(preferences.highContrast);
-      root.dataset.reduceMotion = String(preferences.reduceMotion);
-    };
-    apply();
-    if (theme === 'system') media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, [theme, preferences]);
+    root.dataset.theme = 'light';
+    root.dataset.displayName = preferences.displayName;
+    root.dataset.textSize = preferences.textSize;
+    root.dataset.highContrast = String(preferences.highContrast);
+    root.dataset.reduceMotion = String(preferences.reduceMotion);
+  }, [preferences]);
   const api = useMemo(() => createPortalClient({ source: import.meta.env.VITE_DATA_SOURCE || 'erp', baseUrl: import.meta.env.VITE_API_BASE_URL || '/api', supabaseUrl: import.meta.env.VITE_SUPABASE_URL, supabaseKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, onUnauthorized: () => { setProfile(null); setUserName(''); setIsApprover(false); setNotice('Your session has ended. Please sign in again.'); } }), []);
   async function signedIn(result, loginUserName) {
     if (!result?.token) throw new Error('The sign-in response did not include a session token.');
@@ -117,10 +100,6 @@ export default function App() {
     catch (error) { await api.clearToken(); throw error; }
   }
   async function logout() { setProfile(null); setUserName(''); setIsApprover(false); setPreferences(DEFAULT_PREFERENCES); setNotice(''); navigate('/login'); await api.clearToken(); }
-  function saveAppearance(nextTheme) {
-    localStorage.setItem('swizz-hr-portal-theme', nextTheme);
-    setTheme(nextTheme);
-  }
   if (!profile) return <Login api={api} signedIn={signedIn} notice={notice} />;
   const home = '/dashboard';
   return <div className="app-shell"><aside className="sidebar"><NavLink className="brand" to={home}><span className="brand-icon">S</span><span>Swift<span className="brand-sub">HR PORTAL</span></span></NavLink>
@@ -145,7 +124,7 @@ export default function App() {
       <Route path="/balances" element={<Balances api={api} />} />
       <Route path="/remaining" element={<Remaining api={api} />} />
       <Route path="/applications" element={<Navigate to="/leave/applications" replace />} />
-      <Route path="/settings" element={<Settings api={api} theme={theme} onAppearanceChange={saveAppearance} userName={userName} profile={profile} preferences={preferences} onPreferencesChange={next => { localStorage.setItem(preferenceKey(userName), JSON.stringify(next)); setPreferences(next); }} isApprover={isApprover} onPasswordChanged={result => { api.setToken(result.token); setUserName(result.userName || userName); }} />} />
+      <Route path="/settings" element={<Settings api={api} userName={userName} profile={profile} preferences={preferences} onPreferencesChange={next => { localStorage.setItem(preferenceKey(userName), JSON.stringify(next)); setPreferences(next); }} isApprover={isApprover} onPasswordChanged={result => { api.setToken(result.token); setUserName(result.userName || userName); }} />} />
       <Route path="/processing/leave-applications" element={<Approvals api={api} profile={profile} />} /><Route path="/processing/leave-applications/:id" element={<ApprovalReview api={api} profile={profile} />} /><Route path="*" element={<Navigate to={home} replace />} />
     </Routes></ScreenErrorBoundary></main></div>;
 }
@@ -211,7 +190,7 @@ function HelpSupport({ api }) {
   const topics = [
     ['Sign-in problems', 'Use the account provided by your organization. There is no self-registration in this portal. If your account is locked, unconfirmed or not linked to an employee record, contact HR through your established support channel.'],
     ['Change your password', api.source === 'erp' ? 'Open Settings and use Change password. Enter your current password and confirm the new password. The authenticated HR service validates the current password and enforces its configured password policy. If you cannot sign in, use your organization’s established account recovery process.' : 'Development passwords are managed in Supabase Auth. Use your project administrator’s established support process if you need to change or recover a password.'],
-    ['Update preferences', 'Open Settings to select a theme, preferred display name and accessibility options. Account preferences are saved locally in this browser for your sign-in name and do not sync across devices.'],
+    ['Update preferences', 'Open Settings to select a preferred display name and accessibility options. Account preferences are saved locally in this browser for your sign-in name and do not sync across devices.'],
     ['Update contact details', 'Open My Profile and choose Edit my details. You can update your email address and mobile number; other employee details are managed by HR.'],
     ['Correct employee information', 'Open Settings to review your account information. For official details that cannot be edited in My Profile, contact HR through your organization’s established support process.'],
     ['Apply for leave', 'Open Apply for Leave, choose an eligible leave type, enter dates and a reason, then review the available preview before submitting. Handover details and file uploads are not connected.'],
@@ -355,7 +334,7 @@ function LeaveTypes({ api, isApprover }) {
     {state.data && <div className="list-wrapper">{state.data.length ? state.data.map(type => <div className="list-row type-row" key={type.Id}><strong>{type.Description}</strong><span>{type.Entitlement == null ? 'Balance setup required' : `${type.Entitlement} ${type.UnitTypeDescription || ''}`}</span><div className="row-actions">{canManage && <button onClick={() => { setSelectedType(type.Id); setError(null); setSuccess(''); }}>Set up balance</button>}<button onClick={() => navigate(`/balances?leaveTypeId=${encodeURIComponent(type.Id)}`)}>View balance</button></div></div>) : <div className="empty">No leave types available.</div>}</div>}
   </Card>;
 }
-function Settings({ api, theme, onAppearanceChange, userName, profile, preferences, onPreferencesChange, isApprover, onPasswordChanged }) {
+function Settings({ api, userName, profile, preferences, onPreferencesChange, isApprover, onPasswordChanged }) {
   const [description, setDescription] = useState('');
   const [editingType, setEditingType] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -364,8 +343,6 @@ function Settings({ api, theme, onAppearanceChange, userName, profile, preferenc
   const [preferenceDraft, setPreferenceDraft] = useState(preferences);
   const [preferenceError, setPreferenceError] = useState(null);
   const [preferenceSuccess, setPreferenceSuccess] = useState('');
-  const [appearanceError, setAppearanceError] = useState(null);
-  const [appearanceSuccess, setAppearanceSuccess] = useState('');
   const canManageTypes = api.source === 'supabase' && isApprover;
   const types = useLoad(async () => canManageTypes ? (await api.manageLeaveTypes({ action: 'list' })).Types || [] : null, [api, canManageTypes]);
   const preferencesChanged = JSON.stringify(preferenceDraft) !== JSON.stringify(preferences);
@@ -422,13 +399,6 @@ function Settings({ api, theme, onAppearanceChange, userName, profile, preferenc
     if (preferencesChanged && !window.confirm('Discard your unsaved preference changes?')) return;
     setPreferenceDraft(preferences); setPreferenceError(null); setPreferenceSuccess('');
   }
-  function changeAppearance(nextTheme) {
-    setAppearanceError(null); setAppearanceSuccess('');
-    try {
-      onAppearanceChange(nextTheme);
-      setAppearanceSuccess('Appearance was saved on this device.');
-    } catch (e) { setAppearanceError(e); }
-  }
   async function createType(event) {
     event.preventDefault();
     if (busy) return;
@@ -468,13 +438,6 @@ function Settings({ api, theme, onAppearanceChange, userName, profile, preferenc
   return <Card title="Settings"><p className="muted section-intro">Manage your password, account details and personal portal preferences.</p>
     <Feedback error={error} />{success && <p className="success" role="status">{success}</p>}
     <PasswordChange api={api} userName={userName} onChanged={onPasswordChanged} />
-    <section className="request-form">
-      <div className="form-heading"><h2>Appearance</h2></div>
-      <Field label="Color theme"><select value={theme} onChange={event => changeAppearance(event.target.value)}><option value="light">Light</option><option value="dark">Dark</option><option value="system">System default</option></select></Field>
-      <Feedback error={appearanceError} />{appearanceSuccess && <p className="success" role="status">{appearanceSuccess}</p>}
-      <button type="button" onClick={() => { if (!window.confirm('Reset appearance to the Light theme?')) return; changeAppearance(DEFAULT_THEME); }}>Reset appearance</button>
-      <p className="muted section-intro">Appearance is saved in this browser and applies throughout the portal.</p>
-    </section>
     <form className="request-form" onSubmit={savePreferences}>
       <div className="form-heading"><h2>Account preferences</h2></div>
       <p className="muted section-intro">These preferences are saved in this browser for this sign-in name; they are not synchronized across devices.</p>
@@ -688,7 +651,8 @@ function ApprovalReview({ api, profile }) {
   }
   async function submitRecall(event) {
     event.preventDefault();
-    if (!item?.Id || own || item.Status !== 2 || busy || !window.confirm('Recall this approved leave? The employee will be called back from leave.')) return;
+    if (!api.canRecallLeave || !item?.Id || own || item.Status !== 2 || busy || !window.confirm('Recall this approved leave? The employee will be called back from leave.')) return;
+    if (!recall.remarks.trim()) { setError(new Error('Enter a recall reason.')); return; }
     setBusy('recall'); setError(null);
     try { await api.recallLeave(item.Id, { effectiveReturnDate: recall.effectiveReturnDate, remarks: recall.remarks.trim() }); navigate('/processing/leave-applications', { state: { notice: 'Leave recalled.' } }); }
     catch (e) { setError(e); setBusy(null); }
@@ -747,7 +711,7 @@ function LeaveForm({ api, types, application, onClose, onSaved }) {
       <Field label="Start date"><input required type="date" value={form.start} onChange={e => set('start', e.target.value)} disabled={busy} /></Field>
       <Field label="End date"><input required type="date" min={form.start ? nextDate(form.start) : undefined} value={form.end} onChange={e => set('end', e.target.value)} disabled={busy} /></Field>
     </div>
-    {isNewRequest && api.source === 'supabase' && <p className="help">Choose any start and end dates. Requests can be submitted without preview or workflow fixtures; without those development scenarios, leave days and balance changes are not calculated.</p>}
+    {isNewRequest && api.source === 'supabase' && <p className="help">Choose dates with configured preview and workflow fixtures. Development balances use explicit scenarios rather than live calculations.</p>}
     <Field label={application ? 'Reason for change' : 'Reason'}><textarea required maxLength={256} rows={3} value={form.reason} onChange={e => set('reason', e.target.value)} disabled={busy} /></Field>
     {isNewRequest && <>
       <h2>Work handover</h2>
@@ -758,7 +722,7 @@ function LeaveForm({ api, types, application, onClose, onSaved }) {
     </>}
     <LoadState state={preview} />
     {invalidDates && <Feedback error="End date must be after the start date." />}
-    {preview.data?.PreviewAvailable === false && preview.data.CanSubmit && <p className="help" role="status">No preview fixture matches these dates. Submission will not calculate leave days or balance.</p>}
+    {preview.data?.PreviewAvailable === false && preview.data.CanSubmit && <p className="help" role="status">No preview fixture matches these dates. Ask an approver to configure a development scenario before submitting.</p>}
     {preview.data && !preview.data.CanSubmit && <Feedback error={preview.data.Error || 'The selected leave dates cannot be submitted.'} />}
     <button className="primary" disabled={busy || hasHandoverDraft || invalidDates || preview.loading || !preview.data?.CanSubmit}>{busy ? 'Saving...' : hasHandoverDraft ? 'Clear handover draft to submit' : application ? 'Save changes' : 'Submit request'}</button>
   </form>;
