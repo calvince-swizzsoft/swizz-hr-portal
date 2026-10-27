@@ -312,6 +312,7 @@ function Approvals({ api, profile }) {
 function ApprovalReview({ api, profile }) {
   const { id } = useParams(); const navigate = useNavigate();
   const [remarks, setRemarks] = useState(''); const [busy, setBusy] = useState(null); const [error, setError] = useState(null);
+  const [recalling, setRecalling] = useState(false); const [recall, setRecall] = useState({ effectiveReturnDate: today(), remarks: '' });
   const state = useLoad(signal => api.processingApplication(id, { signal }), [api, id]); const item = state.data?.Application; const preview = state.data?.Preview;
   // Usability only: the ERP and development RPC also reject self-approval.
   const own = item?.EmployeeId === profile.Id;
@@ -322,8 +323,23 @@ function ApprovalReview({ api, profile }) {
     try { await api.authorizeLeave(item.Id, { decision, remarks: remarks.trim() }); navigate('/approvals', { state: { notice: decision === 'approve' ? 'Leave request approved.' : 'Leave request rejected.' } }); }
     catch (e) { setError(e); setBusy(null); }
   }
+  // Recall calls an employee back from approved leave; the ERP enforces permission and date rules.
+  // The return date must fall within the approved leave; start from today when it does, else the first day.
+  const leaveStart = item?.Start ? String(item.Start).slice(0, 10) : ''; const leaveEnd = item?.End ? String(item.End).slice(0, 10) : '';
+  function openRecall() {
+    const now = today(); const start = now < leaveStart ? leaveStart : now > leaveEnd ? leaveStart : now;
+    setError(null); setRecall({ effectiveReturnDate: start, remarks: '' }); setRecalling(true);
+  }
+  async function submitRecall(event) {
+    event.preventDefault();
+    if (!item?.Id || own || item.Status !== 2 || busy || !window.confirm('Recall this approved leave? The employee will be called back from leave.')) return;
+    setBusy('recall'); setError(null);
+    try { await api.recallLeave(item.Id, { effectiveReturnDate: recall.effectiveReturnDate, remarks: recall.remarks.trim() }); navigate('/approvals', { state: { notice: 'Leave recalled.' } }); }
+    catch (e) { setError(e); setBusy(null); }
+  }
   const details = item && [['Employee', item.EmployeeName], ['Leave type', item.LeaveTypeDescription], ['Status', item.StatusDescription], ['Start', dateText(item.Start)], ['End', dateText(item.End)], ['Requested on', dateText(item.CreatedDate)], ['Reason', item.Reason],
-    ...(item.Status === 1 ? [] : [['Decision remarks', item.AuthorizationRemarks], ['Decision date', dateText(item.AuthorizedDate)]])];
+    ...(item.Status === 1 ? [] : [['Decision remarks', item.AuthorizationRemarks], ['Decision date', dateText(item.AuthorizedDate)]]),
+    ...(item.Status === 8 ? [['Recall remarks', item.RecallRemarks], ['Recalled on', dateText(item.RecalledDate)], ['Effective return date', dateText(item.EffectiveReturnDate)]] : [])];
   return <Card title={item?.Status === 1 ? 'Review leave request' : 'Leave decision'} action={<button onClick={() => navigate('/approvals')} disabled={!!busy}>Back</button>}>
     {state.error?.status === 403 ? <ProcessingDenied /> : <LoadState state={state} />}
     {state.data && !item && <Feedback error={unexpectedProcessingReply} />}
@@ -331,7 +347,13 @@ function ApprovalReview({ api, profile }) {
       {api.source === 'supabase' && !own && <BalanceFixtureEditor key={item.Id} api={api} application={item} />}
       {item.Status === 1 && (own ? <p className="help" role="status">You can't approve or reject your own request. Another approver must decide it.</p>
         : <div className="request-form"><Feedback error={error} /><Field label="Remarks (optional)"><textarea maxLength={256} rows={3} value={remarks} onChange={e => { setError(null); setRemarks(e.target.value); }} disabled={!!busy} /></Field>
-          <div className="row-actions"><button className="primary" onClick={() => decide('approve')} disabled={!!busy}>{busy === 'approve' ? 'Approving...' : 'Approve'}</button><button className="danger" onClick={() => decide('reject')} disabled={!!busy}>{busy === 'reject' ? 'Rejecting...' : 'Reject'}</button></div></div>)}</>}
+          <div className="row-actions"><button className="primary" onClick={() => decide('approve')} disabled={!!busy}>{busy === 'approve' ? 'Approving...' : 'Approve'}</button><button className="danger" onClick={() => decide('reject')} disabled={!!busy}>{busy === 'reject' ? 'Rejecting...' : 'Reject'}</button></div></div>)}
+      {item.Status === 2 && !own && api.canRecallLeave && (!recalling
+        ? <div className="row-actions"><button className="danger" onClick={openRecall}>Recall leave</button></div>
+        : <form className="request-form" onSubmit={submitRecall}><div className="form-heading"><h2>Recall leave</h2><button type="button" onClick={() => setRecalling(false)} disabled={!!busy}>Cancel</button></div><Feedback error={error} />
+          <div className="form-grid"><Field label="Effective return date"><input type="date" required min={leaveStart || undefined} max={leaveEnd || undefined} value={recall.effectiveReturnDate} onChange={e => { setError(null); setRecall(x => ({ ...x, effectiveReturnDate: e.target.value })); }} disabled={!!busy} /></Field></div>
+          <Field label="Recall reason"><textarea required maxLength={256} rows={3} value={recall.remarks} onChange={e => { setError(null); setRecall(x => ({ ...x, remarks: e.target.value })); }} disabled={!!busy} /></Field>
+          <button className="danger" disabled={!!busy}>{busy === 'recall' ? 'Recalling...' : 'Recall'}</button><p className="help">The employee returns to work on the effective return date, which must fall within the leave ({dateText(item.Start)} - {dateText(item.End)}). Unused days from that date are restored by the ERP, which also checks your permission and the dates.</p></form>)}</>}
   </Card>;
 }
 function LeaveForm({ api, types, application, onClose, onSaved }) {

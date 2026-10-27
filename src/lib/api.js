@@ -38,6 +38,7 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     source: 'erp',
     loginLabel: 'Username',
     canEditProfile: true,
+    canRecallLeave: true,
     setToken(value) { token = value; },
     clearToken() { token = null; },
     login: (body) => request('auth/login', { method: 'POST', body, anonymous: true }),
@@ -62,5 +63,9 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     processingApplications: (query = {}, options) => request(`hr-portal/processing/leave-applications?${new URLSearchParams(query)}`, options),
     processingApplication: (id, options) => request(`hr-portal/processing/leave-applications/${encodeURIComponent(id)}`, options),
     authorizeLeave: (id, body) => request(`hr-portal/processing/leave-applications/${encodeURIComponent(id)}/authorize`, { method: 'POST', body }),
+    // Body field names are assumed (matching authorize's camelCase and the RecallRemarks/EffectiveReturnDate
+    // fields) until confirmed against the ERP API documentation; change them only here.
+    recallLeave: (id, { effectiveReturnDate, remarks }) => request(`hr-portal/processing/leave-applications/${encodeURIComponent(id)}/recall`,
+      { method: 'POST', body: { effectiveReturnDate, remarks } }),
   };
 }
