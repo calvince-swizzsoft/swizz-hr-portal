@@ -52,8 +52,8 @@ restart/rebuild and a new sign-in, not changes to screen code.
 Import `docs/postman/swift-hr-portal-erp.postman_collection.json` into Postman.
 It contains every ERP request the portal makes, against
 `https://fosa-api.ngrok.dev/api`. In the collection's Variables tab, enter
-`username` and `password` in the **Current value** column only (current values
-are not exported), then run **1. Auth > Sign in**: it stores the session token
+`username` and `password` as local, unshared values, then run
+**1. Auth > Sign in**: it stores the session token
 for all other requests. A temporary password returns `requiresPasswordChange`;
 set `newPassword` and run **Change initial password**. Accounts whose email is
 not yet confirmed cannot sign in until an ERP administrator confirms them.
@@ -67,8 +67,10 @@ not yet confirmed cannot sign in until an ERP administrator confirms them.
 | 5a. Approvals | Pending (22017), approved (22018), one request | No |
 | 5b. LIVE APPROVAL | Approve or reject | **Yes – live ERP** |
 
-Run folders 4 and 5b only with explicit authorization for that action. Never
-save passwords or tokens into the collection file.
+Run **Change initial password**, folder 4, and folder 5b only with explicit
+authorization for that action. Do not run the entire collection against live ERP.
+Clear passwords and tokens before exporting or sharing the collection; never
+commit populated credentials.
 
 ## Implementation and ownership
 

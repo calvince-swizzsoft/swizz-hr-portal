@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Swift HR Portal – ERP API",
-    "description": "Requests the HR portal makes to the WebApplication1 ERP API (see docs/PORTAL_CLIENT.md).\n\nSetup: open the collection's Variables tab and set `username` and `password` in the CURRENT VALUE column only (current values are not exported or synced). Never save real passwords in this file.\n\nRun `1. Auth > Sign in` first: it stores the session token in `token`, which every other request sends as a Bearer token. If the response asks for a password change, run `Change initial password` (set `newPassword` first).\n\nFolders 1–3 and 5a only read data. Folder 4 and 5b change LIVE ERP records (leave requests, approvals, contact details) and may notify people — run them only with explicit authorization for that action.",
+    "description": "Requests the HR portal makes to the WebApplication1 ERP API (see docs/PORTAL_CLIENT.md).\n\nSetup: open the collection's Variables tab and set `username` and `password` as local, unshared values. Clear passwords and tokens before exporting or sharing this collection. Never commit populated credentials.\n\nRun `1. Auth > Sign in` first: it stores the session token in `token`, which every other request sends as a Bearer token. If the response asks for a password change, run `Change initial password` (set `newPassword` first).\n\nFolders 1–3 and 5a only read data. Folder 4 and 5b change LIVE ERP records (leave requests, approvals, contact details) and may notify people — run them only with explicit authorization for that action.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
