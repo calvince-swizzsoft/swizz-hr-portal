@@ -33,6 +33,7 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `createLeaveType(args)` | `{ Description }` | `{ Id, Description, EmployeeCount }`; permission 22017 required, Supabase development only | None |
 | `configureLeaveTypeBalance(args)` | `{ LeaveTypeId, Entitlement, IsAccrued, UnitType, UnitTypeDescription, ExcludeHolidays, ExcludeWeekends, AsAt, CycleStart, CycleEnd, Used, Reserved, Available }` | `{ Id, Description, EmployeeCount, AsAt }`; permission 22017 required, Supabase development only | None |
 | `authorizeLeave(id, body)` | `{ decision:'approve' or 'reject', remarks }` | Saved LeaveApplication | POST `hr-portal/processing/leave-applications/{id}/authorize` |
+| `recallLeave(id, body)` | Approved application ID and `{ effectiveReturnDate:'YYYY-MM-DD', remarks }` (`effectiveReturnDate` confirmed against the ERP; `remarks` not yet confirmed) | Saved LeaveApplication (status 8) | POST `hr-portal/processing/leave-applications/{id}/recall`; ERP only (`canRecallLeave`), Supabase rejects with 400 |
 
 `source`, `loginLabel` and `canEditProfile` are presentation metadata; screens
 hide profile editing when `canEditProfile` is false. Both current adapters support

@@ -158,3 +158,23 @@ test('Supabase setup failures report a safe actionable code without raw database
   await assert.rejects(api.configureLeaveTypeBalance({}),
     error => error.code === 'PGRST202' && /leave type settings migration/.test(error.message));
 });
+
+test('ERP recall posts the return date and remarks to the processing recall endpoint', async () => {
+  const calls = [];
+  const api = createPortalClient({ source: 'erp', fetchImpl: async (url, options) => { calls.push([url, options]); return Response.json({ success: true, data: { ...application, Status: 8, StatusDescription: 'Recalled' } }); } });
+  api.setToken('erp-token');
+  assert.equal(api.canRecallLeave, true);
+  assert.equal((await api.recallLeave(application.Id, { effectiveReturnDate: '2027-01-12', remarks: 'Needed back' })).Status, 8);
+  assert.equal(calls[0][0], `/api/hr-portal/processing/leave-applications/${application.Id}/recall`);
+  assert.equal(calls[0][1].method, 'POST');
+  assert.equal(calls[0][1].headers.Authorization, 'Bearer erp-token');
+  assert.deepEqual(JSON.parse(calls[0][1].body), { effectiveReturnDate: '2027-01-12', remarks: 'Needed back' });
+});
+
+test('Supabase mode hides recall and never calls the database for it', async () => {
+  const supabase = fakeSupabase();
+  const api = createPortalClient({ source: 'supabase', supabase });
+  assert.equal(api.canRecallLeave, false);
+  await assert.rejects(api.recallLeave(application.Id, { effectiveReturnDate: '2027-01-12', remarks: 'x' }), e => e instanceof ApiError && e.status === 400 && /only with the ERP/.test(e.message));
+  assert.equal(supabase.calls.length, 0);
+});
