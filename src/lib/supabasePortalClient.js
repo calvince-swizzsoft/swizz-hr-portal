@@ -67,6 +67,8 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     source: 'supabase',
     loginLabel: 'Email',
     canEditProfile: true,
+    // The development RPC has no recall operation; screens hide recall when false.
+    canRecallLeave: false,
     async login(body) {
       const { data, error } = await getClient().auth.signInWithPassword({ email: body.UserName ?? body.userName, password: body.Password ?? body.password });
       if (error) fail('Sign-in failed. Check your development account credentials.', error.status || 401, error.code);
@@ -105,5 +107,6 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     processingApplications: (query = {}, options) => request('processingApplications', query, options),
     processingApplication: (id, options) => request('processingApplication', { id }, options),
     authorizeLeave: (id, body) => request('authorizeLeave', { ...body, id }),
+    async recallLeave() { throw new ApiError('Recalling leave is available only with the ERP API.', 400); },
   };
 }
