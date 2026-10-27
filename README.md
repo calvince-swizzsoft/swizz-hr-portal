@@ -65,9 +65,9 @@ not yet confirmed cannot sign in until an ERP administrator confirms them.
 | 3. My leave | Leave types, applications, one application, balance, preview | No |
 | 4. LIVE CHANGES | Update contact details, submit, edit, withdraw leave | **Yes – live ERP** |
 | 5a. Approvals | Pending (22017), approved (22018), one request | No |
-| 5b. LIVE APPROVAL | Approve or reject | **Yes – live ERP** |
+| 5b. LIVE APPROVAL & RECALL | Approve or reject, recall approved leave | **Yes – live ERP** |
 
-Run folders 4 and 5b only with explicit authorization for that action. Never
+Run folders 4 and 5b only with explicit authorization for that action. For recall, an empty body `{}` safely returns "An effective return date is required." without recalling. Never
 save passwords or tokens into the collection file.
 
 ## Implementation and ownership
