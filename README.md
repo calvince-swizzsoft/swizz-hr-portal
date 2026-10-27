@@ -47,6 +47,29 @@ approved CORS origins and an appropriate `VITE_API_BASE_URL` including `/api`.
 Failed ERP requests never fall back to Supabase. Switching sources requires a
 restart/rebuild and a new sign-in, not changes to screen code.
 
+### Testing the ERP API in Postman
+
+Import `docs/postman/swift-hr-portal-erp.postman_collection.json` into Postman.
+It contains every ERP request the portal makes, against
+`https://fosa-api.ngrok.dev/api`. In the collection's Variables tab, enter
+`username` and `password` in the **Current value** column only (current values
+are not exported), then run **1. Auth > Sign in**: it stores the session token
+for all other requests. A temporary password returns `requiresPasswordChange`;
+set `newPassword` and run **Change initial password**. Accounts whose email is
+not yet confirmed cannot sign in until an ERP administrator confirms them.
+
+| Folder | Requests | Changes data? |
+| --- | --- | --- |
+| 1. Auth | Sign in, change initial password | Change password only |
+| 2. My profile | Get my profile | No |
+| 3. My leave | Leave types, applications, one application, balance, preview | No |
+| 4. LIVE CHANGES | Update contact details, submit, edit, withdraw leave | **Yes – live ERP** |
+| 5a. Approvals | Pending (22017), approved (22018), one request | No |
+| 5b. LIVE APPROVAL & RECALL | Approve or reject, recall approved leave | **Yes – live ERP** |
+
+Run folders 4 and 5b only with explicit authorization for that action. For recall, an empty body `{}` safely returns "An effective return date is required." without recalling. Never
+save passwords or tokens into the collection file.
+
 ## Implementation and ownership
 
 - [Client operations and response models](docs/PORTAL_CLIENT.md)
