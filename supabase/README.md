@@ -27,6 +27,12 @@ columns, private compatibility views, eligibility/fixture tables, and the
 deleted. Duplicate AuthUserId links or duplicate record IDs abort the migration
 instead of guessing which record to use.
 
+These `.sql` files use PostgreSQL syntax for Supabase. If VS Code's MSSQL
+extension reports SQL Server syntax errors in them, those diagnostics are false
+positives; the workspace disables MSSQL IntelliSense error checking for this
+reason. Run migrations in the Supabase SQL Editor, not against a SQL Server
+connection.
+
 Review other consumers before applying: this migration enables RLS and revokes
 direct anon/authenticated table grants on employee and leave tables. The portal
 uses the authenticated RPC instead of those old public policies. Other apps
@@ -65,6 +71,10 @@ Apply migrations in this order (skip already-applied versions):
 9. `20261024000000_leave_type_management.sql`
 10. `20261025000000_leave_type_balance_dedup.sql`
 11. `20261026000000_leave_type_settings.sql`
+12. `20261027000000_allow_leave_requests_without_preview.sql`
+13. `20261028000000_allow_requests_without_workflow_scenario.sql`
+14. `20261029000000_fix_leave_type_creation_ambiguity.sql`
+15. `20261030000000_leave_type_lifecycle_and_balance_edits.sql`
 
 The contact self-service migration enforces email/mobile-only updates. The earlier profile
 migration has been assigned a distinct version to avoid collision with the
@@ -93,11 +103,21 @@ duplicate eligibility links only, retaining type rows and all history. The
 settings migration separates type creation (Settings) from balance setup
 (Leave types): the approver creates a type without balances, then configures an
 existing type by ID with explicit metadata, chosen as-at/cycle dates and
-employee balance fixtures. Duplicate names are rejected only during creation;
-balance setup never attempts to create a type. The migrations retain existing
-mirror rows, including capitalized `Annual leave`, and fabricate no balance
-values. Give Tess the existing 22017 permission if she does not already have it;
-do not grant direct mirror-table writes.
+employee balance fixtures. The lifecycle migration lets approvers rename,
+archive and restore types. Archiving removes eligibility so a type is no
+longer offered for new requests, while preserving its mirror row, applications
+and balance fixtures. Restoring re-enables it for unlocked employees. The same
+migration allows an approver to edit a fixture for an existing as-at date;
+fixture history and requested-day values are preserved. Duplicate names are
+rejected during creation and rename; balance setup never attempts to create a
+type. The migrations retain existing mirror rows, including capitalized
+`Annual leave`, and fabricate no balance values. Give Tess the existing 22017
+permission if she does not already have it; do not grant direct mirror-table
+writes.
+The no-preview migration allows submitting without a matching preview fixture.
+The final migration also allows dates without workflow scenarios; leave-day and
+balance/history transitions are not calculated when such scenario fixtures are
+absent. Existing overlap, ownership, approver and self-approval checks remain.
 
 ## Login using an existing employee
 
@@ -189,13 +209,13 @@ Both seeded employees receive leave type `20000000-0000-4000-8000-000000000001`.
 | Scenario | Selection | Expected result |
 | --- | --- | --- |
 | Profile | Sign in as either employee | Own synthetic profile only |
-| Balances | Annual leave, as-at `2027-01-10`, page 0 | Entitlement 21, used 3, available 18; one approved history row. Choose this fixture date in the Supabase balance screen. |
+| Balances | Annual leave, as-at `2027-01-10`, page 0 | Entitlement 21, used 3, available 18; one approved history row. Balance fixtures are date-specific; choose this fixture date in the balance screen. |
 | Edit balance fixture | Authorized approver opens an employee's request | Edit entitlement, used, reserved and available for the request's employee and leave type. |
 | Add balance fixture | Authorized approver opens a request with no fixture for the selected date | Create a fixture with explicit cycle dates and values for that employee and leave type. |
 | New request | `2027-01-11` to `2027-01-13` | 3 fixture days; allowed unless overlapping |
 | Pending edit | `2027-01-18` to `2027-01-19` | 2 fixture days |
-| Insufficient balance | `2027-02-01` to `2027-03-01` | CanSubmit false |
-| Other dates | Unconfigured range | CanSubmit false; no invented calculation |
+| Insufficient balance | A range with a configured preview | CanSubmit false |
+| Other dates | Unconfigured range | Request may be submitted; no preview or balance transition is calculated |
 | Foreign application | Read/edit/withdraw | 404 and no mutation |
 | Withdraw | Own pending request | Status 16; further editing denied |
 
@@ -208,11 +228,13 @@ dates, reason length and overlap. Employee row locks serialize mutations. No
 approval operation or notification delivery is provided; an operator prepares
 approved/rejected synthetic scenarios separately.
 
-Run `npm test` and `npm run check`. After optional seeding and the base adapter,
+Run `npm test` and `npm run check`. After optional seeding and applying the
+base adapter, workflow, queue, no-preview and no-workflow-scenario migrations,
 the SQL operator can run `tests/portal-schema.test.sql` in the development
-project. Run `tests/leave-workflow.test.sql` only after the workflow and
-approver-balance migrations are applied. Run
-`tests/leave-type-management.test.sql` after all three leave type migrations.
+project. Run `tests/leave-workflow.test.sql` only after the workflow,
+approver-balance and no-workflow-scenario migrations are applied. Run
+`tests/leave-type-management.test.sql` after all three leave type migrations
+and the leave-type creation fix migration.
 The SQL tests check identity,
 ownership and transitions within a transaction and roll back all test writes.
 They do not prove your hosted project's current policies or Auth configuration.

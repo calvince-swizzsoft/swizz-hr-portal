@@ -23,7 +23,7 @@ create or replace function public.portal_dev_create_leave_type(args jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   actor portal_mirror_private.employees;
-  description text;
+  requested_description text;
   type_id text;
   employee_count integer;
 begin
@@ -46,15 +46,15 @@ begin
     return jsonb_build_object('success', false, 'status', 403, 'message', 'Your role cannot create leave types.',
       'error', jsonb_build_object('code', 'HR_PORTAL_ACCESS_DENIED'));
   end if;
-  description := btrim(args->>'Description');
-  if description is null or length(description) not between 1 and 100 then
+  requested_description := btrim(args->>'Description');
+  if requested_description is null or length(requested_description) not between 1 and 100 then
     raise exception using errcode = '22023', message = 'Leave type name must contain 1 to 100 characters.';
   end if;
 
   lock table public.leave_types_mirror in share row exclusive mode;
   if exists (
     select 1 from public.leave_types_mirror t
-    where lower(btrim(t.description)) = lower(description)
+    where lower(btrim(t.description)) = lower(requested_description)
   ) then
     raise exception using errcode = '22023', message = 'A leave type with this name already exists. Select it under Leave types to set up its balance.';
   end if;
@@ -64,13 +64,13 @@ begin
   end if;
   type_id := gen_random_uuid()::text;
   insert into public.leave_types_mirror(erp_id, description, source_payload)
-  values(type_id, description, '{}'::jsonb);
+  values(type_id, requested_description, '{}'::jsonb);
   insert into public.portal_mirror_eligibility(employee_id, leave_type_id)
   select e."Id"::text, type_id
   from public.employee_mirror e
   where not e."IsLocked";
   return jsonb_build_object('success', true, 'message', 'Leave type created.',
-    'data', jsonb_build_object('Id', type_id, 'Description', description, 'EmployeeCount', employee_count));
+    'data', jsonb_build_object('Id', type_id, 'Description', requested_description, 'EmployeeCount', employee_count));
 exception when invalid_text_representation or invalid_datetime_format or datetime_field_overflow
   or invalid_parameter_value or numeric_value_out_of_range then
   return jsonb_build_object('success', false, 'status', 400,

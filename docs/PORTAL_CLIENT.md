@@ -13,10 +13,12 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 
 | Operation | Input | Result | ERP path relative to `/api` |
 | --- | --- | --- | --- |
-| `login(body)` | `{ UserName, Password }` | `{ token, userName, roles }` or ERP `requiresPasswordChange` result | POST `auth/login` |
+| `login(body)` | `{ UserName, Password }`; sent as `{ userName, password }` | `{ token, userName, roles }` or ERP `requiresPasswordChange` result | POST `auth/login` |
+| `confirmEmail(body)` | `{ UserId, Code }`; sent as `{ userId, code }` | API confirmation result | POST `auth/confirm-email` |
 | `setToken(token)` | Login token | void; Supabase already holds its session | None |
 | `clearToken()` | None | void or promise; callers may await | Local session cleanup |
-| `changeInitialPassword(body)` | `{ UserName, CurrentPassword, NewPassword, ConfirmPassword }` | ERP login result; unsupported in synthetic mode | POST `auth/change-initial-password` |
+| `changePassword(body)` | `{ UserName, CurrentPassword, NewPassword, ConfirmPassword }`; sent as `{ userName, currentPassword, newPassword, confirmPassword }` | Changes the password, then signs in with the new password and returns the login result; unsupported in synthetic mode | POST `auth/change-initial-password`, then `auth/login` |
+| `changeInitialPassword(body)` | Same as `changePassword(body)` | Backward-compatible alias used by the first-login password flow | Same as `changePassword(body)` |
 | `profile(options)` | None | EmployeeProfile | GET `hr-portal/me` |
 | `updateProfile(changes)` | Nonempty object containing CustomerAddressEmail and/or CustomerAddressMobileLine | Saved EmployeeProfile | PUT `hr-portal/me` |
 | `leaveTypes(options)` | None | LeaveType[] | GET `hr-portal/me/leave-types` |
@@ -25,8 +27,9 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `balances(query, options)` | `{ leaveTypeId, asAt, pageIndex=0 }` | EmployeeLeaveStatistics | GET `hr-portal/me/leave-balances` |
 | `preview(query, options)` | `{ leaveTypeId, start, end, excludedId? }` | LeavePreview | GET `hr-portal/me/leave-preview` |
 | `submitLeave(body)` | LeaveRequest | Saved LeaveApplication | POST `hr-portal/me/leave-applications` |
-| `updateLeave(id, body)` | Own pending ID and LeaveRequest | Saved LeaveApplication | PUT `hr-portal/me/leave-applications/{id}` |
+| `updateLeave(id, body)` | Own pending ID and LeaveRequest (`leaveTypeId`, `start`, `end`, `reason`); only pending applications can be edited. The edit form changes dates and reason while retaining the original leave type. | Saved LeaveApplication | PUT `/api/hr-portal/me/leave-applications/{id}` |
 | `withdraw(id)` | Own pending ID | Saved LeaveApplication | POST `hr-portal/me/leave-applications/{id}/withdraw` |
+| `retryNotification(id)` | Own application ID with `NotificationPending=true` | Updated notification/application result | POST `hr-portal/me/leave-applications/{id}/retry-notification`; no body |
 | `processingApplications(query, options)` | `{ status:1 or 2, pageIndex:0, pageSize:20 }` | ApplicationPage; permission checked server-side | GET `hr-portal/processing/leave-applications` |
 | `processingApplication(id, options)` | Processing application ID | `{ Application, Preview }` | GET `hr-portal/processing/leave-applications/{id}` |
 | `processingBalanceFixture(args, options)` | `{ action:'get' or 'save', applicationId, asAt, pageIndex, Entitlement?, Used?, Reserved?, Available?, CycleStart?, CycleEnd? }` | EmployeeLeaveStatistics fixture; processing permission required, Supabase development only | None |
@@ -36,9 +39,10 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 
 `source`, `loginLabel` and `canEditProfile` are presentation metadata; screens
 hide profile editing when `canEditProfile` is false. Both current adapters support
-contact-only editing. In Supabase mode login uses
-an Auth email; ERP accepts its normal username. Do not persist tokens in storage.
-No real credentials are supplied in code or seed SQL.
+contact-only editing. In Supabase mode login uses an Auth email; ERP accepts its normal username.
+Email confirmation and password changes are available through the ERP adapter
+only. Supabase development passwords are managed in Supabase Auth. Do not
+persist tokens in storage. No real credentials are supplied in code or seed SQL.
 
 ## Models
 
@@ -141,6 +145,11 @@ leave-workflow migration, Supabase enforces equivalent development grants and
 self-approval prevention. The separately permission-gated processing inbox is
 not shown to employees without queue access. See the
 [workflow guide](LEAVE_WORKFLOW_GUIDE.md) for SQL and fixture limitations.
+The inbox UI is routed at `/processing/leave-applications`; its pending and
+approved tabs request statuses 1 and 2, respectively, with zero-based
+`pageIndex` and `pageSize=20`. Each row opens
+`/processing/leave-applications/{id}`, which displays the processing
+application and preview. The legacy `/approvals` path redirects to the inbox.
 
 ## Errors and limitations
 
@@ -151,12 +160,17 @@ Adapters reject with `ApiError` carrying `message`, `status`, `code` and nullabl
 transport failures are sanitized; unexpected SQL failures are not shown raw.
 
 Synthetic fixtures do not recalculate balances, apply calendar rules, accrue
-entitlements, enqueue notifications or prove approval availability. Known preview
-scenarios can be submitted; unknown ones have `CanSubmit=false`. Leave-request
-writes check ownership, eligibility, pending status, reason/date formats and
-overlap. Submitting or withdrawing requests does not recalculate balance
-fixtures. Test the real ERP calculations, concurrency, approval availability
-and notification handling separately before switching live.
+entitlements, enqueue notifications or prove approval availability. Requests
+can be submitted without a matching preview fixture; unknown previews report
+`PreviewAvailable=false`, `CanSubmit=true`, and zero calculated days/balance.
+Leave-request writes still check ownership, eligibility, pending status,
+reason/date formats and overlap. The development workflow wrapper also requires
+a matching workflow scenario for balance/history transitions; approvers may still
+decide a request without one, but synthetic balances will not change.
+Submitting or withdrawing requests without workflow fixtures does not
+recalculate balance fixtures. Test real ERP calculations,
+concurrency, approval availability and notification handling separately before
+switching live.
 
 In Supabase development mode, a user with processing permission can edit or
 create a fixture for the employee and leave type attached to a selected request
@@ -168,16 +182,31 @@ must be nonnegative numbers; `Available` is mirrored to `Remaining` and `Used`
 to `TakenDays`. This does not update ERP balances; the ERP adapter rejects this
 development-only operation.
 
+The signed-in **Settings** page changes ERP passwords through the authenticated
+`auth/change-initial-password` operation and re-authenticates to replace the
+in-memory token. The strength indicator is informational; the backend remains
+the password-policy authority. Password changes remain unsupported by the
+Supabase development adapter. Theme and employee preferences are saved locally
+in the browser (preferences are keyed by sign-in name and are not
+synced across devices). Settings displays the authenticated user's `/me`
+profile and links to the existing contact-only update form. No API is defined
+for last-login data, active sessions, session revocation, two-factor setup,
+recovery links, privacy/terms URLs, or HR/IT support contacts; the UI explains
+those limitations without fake controls or details.
+
 Approvers with permission 22017 create leave types under **Settings** using
 `createLeaveType`. The operation rejects duplicate names and does not create
 balances. **Leave types** uses `configureLeaveTypeBalance` to configure an
 existing type by ID, without attempting to create it again. It adds an
-all-employee fixture for the chosen as-at date and updates that type's metadata.
-Fixture dates are not limited to January 2027. These writes stay in the
-development mirrors and never update ERP. Leave submissions still need explicit
-matching preview fixtures. The deduplication migration removes only redundant
-eligibility links and preserves mirror/history rows, including capitalized
-`Annual leave`.
+all-employee fixture for the chosen as-at date and updates that type's metadata;
+resaving an existing date edits its values while preserving fixture history and
+requested-day values. Settings also uses `manageLeaveTypes` to rename, archive
+or restore types. Archiving removes eligibility for new leave requests but
+preserves the type row, applications and balance fixtures. These writes
+stay in the development mirrors and never update ERP. Leave submissions do not need a
+matching preview fixture; without one, requested days and balance are not
+calculated. The deduplication migration removes only redundant eligibility
+links and preserves mirror/history rows, including capitalized `Annual leave`.
 
 The optional workflow migration switches explicitly configured balance snapshots
 atomically on submit/edit/withdraw/approve/reject. It does not recalculate
@@ -189,3 +218,9 @@ Set `VITE_DATA_SOURCE=erp`, configure API URL/proxy, restart/rebuild and sign in
 with an ERP account. No screen changes or synthetic data import is needed.
 Compare actual ERP responses with these contracts using authorized test users.
 Do not claim live contract verification from offline fixture tests alone.
+
+The employee UI offers Dashboard, My Profile, Leave Management, Apply for
+Leave, My Leaves and Help & Support. Help & Support provides guidance for
+existing portal workflows. Other employee tools are not currently included.
+Payslip/P9 remain outside the shared client until ownership and ERP contracts
+are defined.
