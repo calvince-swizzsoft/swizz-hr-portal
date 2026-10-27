@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/api': {
-          target: env.API_PROXY_TARGET || 'http://localhost:58240',
+          target: env.API_PROXY_TARGET || 'https://fosa-api.ngrok.dev',
           changeOrigin: true,
         },
       },

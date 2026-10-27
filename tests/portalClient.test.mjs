@@ -107,6 +107,24 @@ test('settings create types separately from configuring existing type balances',
   await assert.rejects(erp.createLeaveType({ Description: 'Study leave' }), /only in Supabase development mode/);
   await assert.rejects(erp.configureLeaveTypeBalance(args), /only in Supabase development mode/);
 });
+test('development settings can list and manage leave types; ERP mode refuses those writes', async () => {
+  const types = [{ Id: 'leave-1', Description: 'Study leave', Archived: false }];
+  const supabase = fakeSupabase((operation, name, params) => ({
+    success: true,
+    data: name === 'portal_dev_manage_leave_type' && params.args.action === 'list'
+      ? { Types: types }
+      : { Id: 'leave-1', Description: 'Study leave' },
+  }));
+  const api = createPortalClient({ source: 'supabase', supabase });
+  await api.login({ UserName: 'approver@example.test', Password: 'test-only' });
+  assert.deepEqual(await api.manageLeaveTypes({ action: 'list' }), { Types: types });
+  const args = { action: 'archive', LeaveTypeId: 'leave-1' };
+  assert.deepEqual(await api.manageLeaveTypes(args), { Id: 'leave-1', Description: 'Study leave' });
+  assert.deepEqual(supabase.calls[1], ['portal_dev_manage_leave_type', { args: { action: 'list' } }]);
+  assert.deepEqual(supabase.calls[2], ['portal_dev_manage_leave_type', { args }]);
+  await assert.rejects(createPortalClient({ source: 'erp' }).manageLeaveTypes(args),
+    /only in Supabase development mode/);
+});
 test('invalid source fails closed and ERP errors never call Supabase', async () => {
   assert.throws(()=>createPortalClient({source:'unknown'}),/Unsupported/);
   const supabase = fakeSupabase();
@@ -157,4 +175,6 @@ test('Supabase setup failures report a safe actionable code without raw database
     error => error.code === 'PGRST202' && /leave type settings migration/.test(error.message));
   await assert.rejects(api.configureLeaveTypeBalance({}),
     error => error.code === 'PGRST202' && /leave type settings migration/.test(error.message));
+  await assert.rejects(api.manageLeaveTypes({ action: 'list' }),
+    error => error.code === 'PGRST202' && /leave type lifecycle migration/.test(error.message));
 });

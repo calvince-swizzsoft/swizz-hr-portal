@@ -34,14 +34,41 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     if (data === null) throw new ApiError('The HR service returned an unexpected response. Check the API connection.', response.status);
     return data && Object.hasOwn(data, 'data') ? data.data : data;
   }
+  async function changePassword({ UserName, CurrentPassword, NewPassword, ConfirmPassword }) {
+    await request('auth/change-initial-password', {
+      method: 'POST',
+      body: {
+        userName: UserName,
+        currentPassword: CurrentPassword,
+        newPassword: NewPassword,
+        confirmPassword: ConfirmPassword,
+      },
+      anonymous: true,
+    });
+    return request('auth/login', {
+      method: 'POST',
+      body: { userName: UserName, password: NewPassword },
+      anonymous: true,
+    });
+  }
   return {
     source: 'erp',
     loginLabel: 'Username',
     canEditProfile: true,
     setToken(value) { token = value; },
     clearToken() { token = null; },
-    login: (body) => request('auth/login', { method: 'POST', body, anonymous: true }),
-    changeInitialPassword: (body) => request('auth/change-initial-password', { method: 'POST', body, anonymous: true }),
+    login: ({ UserName, Password }) => request('auth/login', {
+      method: 'POST',
+      body: { userName: UserName, password: Password },
+      anonymous: true,
+    }),
+    confirmEmail: ({ UserId, Code }) => request('auth/confirm-email', {
+      method: 'POST',
+      body: { userId: UserId, code: Code },
+      anonymous: true,
+    }),
+    changePassword,
+    changeInitialPassword: changePassword,
     profile: (options) => request('hr-portal/me', options),
     async updateProfile(changes) {
       let body;
@@ -55,10 +82,12 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     processingBalanceFixture: async () => { throw new ApiError('Balance fixture editing is available only in Supabase development mode.', 400); },
     createLeaveType: async () => { throw new ApiError('Leave type management is available only in Supabase development mode.', 400); },
     configureLeaveTypeBalance: async () => { throw new ApiError('Leave type balance setup is available only in Supabase development mode.', 400); },
+    manageLeaveTypes: async () => { throw new ApiError('Leave type management is available only in Supabase development mode.', 400); },
     preview: (query, options) => request(`hr-portal/me/leave-preview?${new URLSearchParams(query)}`, options),
     submitLeave: (body) => request('hr-portal/me/leave-applications', { method: 'POST', body }),
     updateLeave: (id, body) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, { method: 'PUT', body }),
     withdraw: (id) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}/withdraw`, { method: 'POST' }),
+    retryNotification: (id) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}/retry-notification`, { method: 'POST' }),
     processingApplications: (query = {}, options) => request(`hr-portal/processing/leave-applications?${new URLSearchParams(query)}`, options),
     processingApplication: (id, options) => request(`hr-portal/processing/leave-applications/${encodeURIComponent(id)}`, options),
     authorizeLeave: (id, body) => request(`hr-portal/processing/leave-applications/${encodeURIComponent(id)}/authorize`, { method: 'POST', body }),

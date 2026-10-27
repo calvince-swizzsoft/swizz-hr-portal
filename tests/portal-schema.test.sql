@@ -49,7 +49,8 @@ begin
   assert (response #>> '{data,Status}')::integer = 16;
   assert (public.portal_dev_request('updateLeave',body || jsonb_build_object('id',saved_id))->>'status')::integer = 400;
   response := public.portal_dev_request('preview',body || '{"start":"2027-05-01","end":"2027-05-02"}');
-  assert not (response #>> '{data,CanSubmit}')::boolean, 'Unknown fixtures cannot be submitted';
+  assert (response #>> '{data,CanSubmit}')::boolean, 'A missing preview fixture does not block requests';
+  assert not (response #>> '{data,PreviewAvailable}')::boolean, 'Unknown dates have no calculated preview';
   assert (public.portal_dev_request('submitLeave',body || '{"reason":""}')->>'status')::integer = 400;
   assert (public.portal_dev_request('application','{"id":"not-a-guid"}')->>'status')::integer = 404;
   update public.employee_mirror set "IsLocked" = true where "AuthUserId" = first_user;

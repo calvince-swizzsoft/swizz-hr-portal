@@ -81,6 +81,47 @@ begin
   assert (select payload#>>'{Balance,Start}' from public.portal_mirror_balance_fixtures
     where leave_type_id = created_type and employee_id = '10000000-0000-4000-8000-000000000001'
       and as_at = '2999-01-02' and page_index = 0) = '2999-01-01';
+  update public.portal_mirror_balance_fixtures
+  set payload = jsonb_set(payload, '{History}', '[{"Id":"preserved-history"}]'::jsonb)
+  where leave_type_id = created_type and employee_id = '10000000-0000-4000-8000-000000000001'
+    and as_at = '2999-01-02' and page_index = 0;
+  response := public.portal_dev_configure_leave_type_balance(jsonb_build_object(
+    'LeaveTypeId', created_type, 'Entitlement', 6, 'IsAccrued', true,
+    'UnitType', 3, 'UnitTypeDescription', 'Yearly', 'ExcludeHolidays', false, 'ExcludeWeekends', true,
+    'AsAt', '2999-01-02', 'CycleStart', '2999-01-01', 'CycleEnd', '2999-12-31',
+    'Used', 2, 'Reserved', 1, 'Available', 3
+  ));
+  assert (response->>'success')::boolean, response::text;
+  assert (select count(*) from public.portal_mirror_balance_fixtures
+    where leave_type_id = created_type and as_at = '2999-01-02' and page_index = 0) = employee_count,
+    'Editing the same as-at date must update fixtures instead of rejecting them';
+  assert (select payload#>>'{Balance,Available}' from public.portal_mirror_balance_fixtures
+    where leave_type_id = created_type and employee_id = '10000000-0000-4000-8000-000000000001'
+      and as_at = '2999-01-02' and page_index = 0) = '3';
+  assert (select payload#>>'{History,0,Id}' from public.portal_mirror_balance_fixtures
+    where leave_type_id = created_type and employee_id = '10000000-0000-4000-8000-000000000001'
+      and as_at = '2999-01-02' and page_index = 0) = 'preserved-history',
+    'Editing balance values must preserve existing fixture history';
+
+  response := public.portal_dev_manage_leave_type(jsonb_build_object('action', 'list'));
+  assert (response->>'success')::boolean, response::text;
+  assert exists(select 1 from jsonb_array_elements(response#>'{data,Types}') t where t->>'Id' = created_type);
+  response := public.portal_dev_manage_leave_type(jsonb_build_object(
+    'action', 'update', 'LeaveTypeId', created_type, 'Description', 'Settings renamed leave'
+  ));
+  assert (response->>'success')::boolean, response::text;
+  assert (select description from public.leave_types_mirror where erp_id = created_type) = 'Settings renamed leave';
+  response := public.portal_dev_manage_leave_type(jsonb_build_object('action', 'archive', 'LeaveTypeId', created_type));
+  assert (response->>'success')::boolean, response::text;
+  assert (select source_payload->>'PortalArchived' from public.leave_types_mirror where erp_id = created_type) = 'true';
+  assert not exists(select 1 from public.portal_mirror_eligibility where leave_type_id = created_type),
+    'Archiving must remove eligibility without deleting history or fixtures';
+  assert exists(select 1 from public.portal_mirror_balance_fixtures where leave_type_id = created_type),
+    'Archiving must preserve balance fixtures';
+  response := public.portal_dev_manage_leave_type(jsonb_build_object('action', 'restore', 'LeaveTypeId', created_type));
+  assert (response->>'success')::boolean, response::text;
+  assert (select source_payload ? 'PortalArchived' from public.leave_types_mirror where erp_id = created_type) = false;
+  assert (select count(*) from public.portal_mirror_eligibility where leave_type_id = created_type) = employee_count;
 
   response := public.portal_dev_configure_leave_type_balance(jsonb_build_object(
     'LeaveTypeId', '24000000-0000-4000-8000-000000000001',

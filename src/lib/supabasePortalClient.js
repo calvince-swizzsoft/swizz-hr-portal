@@ -39,6 +39,8 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
             ? 'Leave type settings are unavailable. Apply the leave type settings migration to this Supabase project.'
             : name === 'portal_dev_configure_leave_type_balance'
             ? 'Leave type balance setup is unavailable. Apply the leave type settings migration to this Supabase project.'
+            : name === 'portal_dev_manage_leave_type'
+            ? 'Leave type management is unavailable. Apply the leave type lifecycle migration to this Supabase project.'
             : 'The development API function is unavailable. Apply the existing-mirror adapter migration to this Supabase project.',
           '42501': 'Access to the development API was denied. Check the migration grants and the signed-in Auth role.',
           '42P01': 'A required development table or view is missing. Check that the adapter migration completed successfully.',
@@ -78,7 +80,9 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
       expiresAt = 0;
       if (client) await client.auth.signOut({ scope: 'local' });
     },
-    async changeInitialPassword() { throw new ApiError('Manage development passwords in Supabase Auth. ERP first-login behaviour is tested in ERP mode.', 400); },
+    async confirmEmail() { throw new ApiError('Email confirmation is available only through the HR API.', 400); },
+    async changePassword() { throw new ApiError('Password changes are not available in Supabase development mode. Manage development passwords in Supabase Auth.', 400); },
+    changeInitialPassword: async () => { throw new ApiError('Manage development passwords in Supabase Auth. ERP first-login behaviour is tested in ERP mode.', 400); },
     profile: (options) => request('profile', {}, options),
     async updateProfile(changes) {
       let body;
@@ -92,10 +96,12 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     processingBalanceFixture: (args, options) => rpc('portal_dev_processing_balance_fixture', { args }, options?.signal),
     createLeaveType: (args) => rpc('portal_dev_create_leave_type', { args }),
     configureLeaveTypeBalance: (args) => rpc('portal_dev_configure_leave_type_balance', { args }),
+    manageLeaveTypes: (args) => rpc('portal_dev_manage_leave_type', { args }),
     preview: (query, options) => request('preview', query, options),
     submitLeave: (body) => request('submitLeave', body),
     updateLeave: (id, body) => request('updateLeave', { ...body, id }),
     withdraw: (id) => request('withdraw', { id }),
+    async retryNotification() { throw new ApiError('Notification retries are available only through the HR API.', 400); },
     processingApplications: (query = {}, options) => request('processingApplications', query, options),
     processingApplication: (id, options) => request('processingApplication', { id }, options),
     authorizeLeave: (id, body) => request('authorizeLeave', { ...body, id }),

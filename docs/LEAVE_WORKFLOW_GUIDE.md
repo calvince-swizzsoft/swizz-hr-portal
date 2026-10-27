@@ -30,6 +30,10 @@ Two's decision and the corresponding balance/history.
 Build a separate routed processing screen using the existing Operational
 indigo page/header and gray list pattern, with centered pagination.
 
+The approver inbox is available at `/processing/leave-applications`; the
+application detail and preview are at `/processing/leave-applications/{id}`.
+The older `/approvals` links redirect to these routes.
+
 1. Fetch pending requests and display employee, type, dates and status.
 2. Open details showing `Application` and `Preview` from processingApplication.
 3. Provide approve/reject actions and a remarks field of at most 256 characters.
@@ -165,8 +169,10 @@ user with permission 22017, matching the ERP's separate-approver prerequisite.
 
 - One active workflow request per employee and leave type, including an approved
   request. Do not test multiple concurrent allocations with this fixture set.
-- Only the two successful seeded date ranges support the complete workflow.
-  Other ranges need explicit workflow and preview fixtures.
+- The two successful seeded date ranges have complete preview and balance
+  transitions. Other eligible date ranges may be submitted and processed, but
+  without workflow fixtures they do not change synthetic balance/history
+  snapshots, and without preview fixtures their chargeable days are unknown.
 - Editing stays within the same leave type in this development scenario.
 - Balances update for the configured as-at date/page, not arbitrary dates/pages.
 - History snapshots represent the configured scenario, not an accumulated ledger

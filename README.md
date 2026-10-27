@@ -2,8 +2,9 @@
 
 Employee self-service for the Swift Financials ERP. React screens use one
 `portalClient` contract, backed by either WebApplication1 or an authenticated
-Supabase development model. WebApplication1 remains the production source of
-truth; Supabase contains synthetic test scenarios only.
+Supabase development model. WebApplication1 remains the source of truth; the
+Supabase adapter contains synthetic test scenarios only. API mode is the
+default.
 
 ## Start
 
@@ -40,8 +41,13 @@ VITE_API_BASE_URL=/api
 API_PROXY_TARGET=https://fosa-api.ngrok.dev
 ```
 
-Use an active employee-linked ERP account. `API_PROXY_TARGET` is used only by
-the Vite development server; the default example points to local WebApplication1.
+The login screen calls `POST /api/auth/login`; email confirmation calls
+`POST /api/auth/confirm-email`; initial and signed-in password changes call
+`POST /api/auth/change-initial-password`. The browser sends the documented
+camelCase JSON request fields. After a successful password change, the portal
+signs in again with the new password to obtain a fresh session token. Use an
+active employee-linked ERP account.
+`API_PROXY_TARGET` is used only by the Vite development server.
 For hosted production, serve API and frontend under one HTTPS origin or configure
 approved CORS origins and an appropriate `VITE_API_BASE_URL` including `/api`.
 Failed ERP requests never fall back to Supabase. Switching sources requires a
@@ -79,15 +85,42 @@ commit populated credentials.
 - [Dinah and Tess leave workflow assignments and SQL](docs/LEAVE_WORKFLOW_GUIDE.md)
 - `src/lib/portalClient.js`: selects one adapter for the application session.
 - `src/lib/api.js`: ERP HTTP transport and error handling.
-- `src/lib/supabasePortalClient.js`: Supabase Auth and development RPC adapter
+- `src/lib/supabasePortalClient.js`: optional Supabase Auth and development RPC adapter
   backed by the existing employee and leave mirror tables.
 - `src/App.jsx`: employee screens; no direct Supabase calls.
 
-The employee self-service screens and leave approval inbox use the shared
-portal client. Processing access and decisions are enforced by the ERP or the
-synthetic Supabase development RPC; the UI does not grant approval permissions.
+The employee self-service screens and leave application inbox use the shared
+portal client. Approvers use `/processing/leave-applications` for pending and
+approved requests and `/processing/leave-applications/{id}` for application
+details and preview. Processing access and decisions are enforced by the ERP
+or the synthetic Supabase development RPC; the UI does not grant approval
+permissions.
 
-Included: login, ERP initial-password change, contact-only profile editing in both
+The employee sidebar provides Dashboard, My Profile, Leave Management, Apply
+for Leave and My Leaves. Apply for Leave is a separate form;
+only My Leaves displays the employee's request list and statuses. Dashboard shortcuts use the
+signed-in employee's own profile; the leave application list uses the
+employee-scoped API.
+
+Settings includes an authenticated ERP password change with show/hide controls,
+password-match validation and a non-authoritative strength estimate; the HR
+authentication API applies its own password policy. Theme (Light, Dark or
+System) is stored in the browser. Account preferences (language, display name
+and accessibility options) are stored locally per sign-in name and do not sync
+across devices. Employee
+account details in Settings come from the authenticated `/api/hr-portal/me`
+profile; email and phone edits use the existing contact-only profile API.
+Session management, two-factor setup, last-login data, password recovery links,
+privacy/terms URLs and support contacts are not provided by the configured
+services, so Settings does not simulate them.
+
+The dashboard provides quick access to leave requests, My Profile and
+**Help & Support**. Help & Support provides guidance for current portal
+workflows. Other employee tools are not currently included in the portal.
+Payslip/P9 remain outside the shared client until their ownership and ERP
+contracts are defined.
+
+Included: login, ERP initial and signed-in password changes, contact-only profile editing in both
 data sources, eligible leave types, own application list showing leave type,
 dates and status, request submission, withdrawal of pending requests,
 balance/history and preview screens, and pending/approved approvals with details
@@ -121,32 +154,50 @@ development migration adds **compassionate leave**, **maternity leave**, and
 employees. Balance setup requires explicit metadata, an as-at date, cycle
 start/end and balance values; no numeric entitlement is invented. Dates are
 selectable and are not fixed to January 2027; employees choose the fixture's
-as-at date to view it. This does not affect ERP data.
+as-at date to view it. Approvers can set up another balance fixture for any
+existing type and chosen date, including types that already have entitlement
+metadata. Existing fixtures for a chosen date can be edited by saving the
+updated values; balance history is retained. Settings also allows approvers to
+rename, archive and restore leave types. Archiving prevents new requests while
+preserving existing applications and fixtures. Settings is available to every
+signed-in user for account preferences and password changes; Supabase
+development password changes remain managed in Supabase Auth. Theme is
+browser-persisted; language, display name and accessibility preferences are
+saved per sign-in name on the current device. The balances screen initially selects today's date; if no fixture
+exists for it, choose the fixture's as-at date or ask an approver to set one up
+from **Leave types**. This does not affect ERP data.
 The existing **Annual leave** development fixture remains 21 days and the
 leave-types list shows its yearly entitlement.
 
 Apply the new type and balance migrations in order:
 [`20261024000000_leave_type_management.sql`](supabase/migrations/20261024000000_leave_type_management.sql),
 [`20261025000000_leave_type_balance_dedup.sql`](supabase/migrations/20261025000000_leave_type_balance_dedup.sql),
-and
 [`20261026000000_leave_type_settings.sql`](supabase/migrations/20261026000000_leave_type_settings.sql),
+[`20261027000000_allow_leave_requests_without_preview.sql`](supabase/migrations/20261027000000_allow_leave_requests_without_preview.sql),
+[`20261028000000_allow_requests_without_workflow_scenario.sql`](supabase/migrations/20261028000000_allow_requests_without_workflow_scenario.sql),
+[`20261029000000_fix_leave_type_creation_ambiguity.sql`](supabase/migrations/20261029000000_fix_leave_type_creation_ambiguity.sql),
+[`20261030000000_leave_type_lifecycle_and_balance_edits.sql`](supabase/migrations/20261030000000_leave_type_lifecycle_and_balance_edits.sql),
 after the existing-mirror, workflow and approver-balance migrations. These keep
 the capitalized **Annual leave** mirror row and history; duplicate
 case-insensitive type rows are removed from employee eligibility without
 deleting their underlying records. The final migration installs separate
 Settings/create and existing-type balance operations and removes the old
-combined operation.
+combined operation. The lifecycle migration supports type renaming, reversible
+archiving, restoring, and editing balance fixtures for an existing date. The
+no-preview migration allows leave requests with no preview fixture; development
+mode reports no calculated leave days/balance in that case.
 
-Tess must have the existing `22017` leave-approver permission to see Settings
-and use **Set up balance**. The SQL migration must be run in Supabase; the
+Tess must have the existing `22017` leave-approver permission to manage
+development leave types and balances in Settings. General account settings are
+available to all signed-in users. The SQL migration must be run in Supabase; the
 portal does not apply migrations automatically.
 
 On the leave form, employees can select start and end dates independently of
-balance fixtures; changing the leave type no longer clears those dates. The
-existing preview operation still validates the request, but its calculated day
-and balance details are not displayed. Supabase mode still requires an exact
-matching preview fixture for submission; it does not calculate arbitrary date
-ranges. Existing balance fixtures are preserved.
+balance fixtures; changing the leave type no longer clears those dates. In
+Supabase mode, a request can be submitted without matching preview or workflow
+fixtures. The development portal does not calculate leave days or balance
+transitions when those scenarios are absent; overlap checks still apply.
+Existing balance fixtures are preserved.
 
 The leave form also has a draft-only work handover section. The coworker
 directory and supporting-document upload are not connected to the HR service,
