@@ -20,7 +20,7 @@ test('email confirmation and initial password changes use the documented API con
     calls.push(args);
     return Response.json({
       success: true,
-      data: calls.length === 3 ? loginResult : { message: 'Confirmed' },
+      data: calls.length === 2 ? loginResult : { message: 'Confirmed' },
     });
   } });
 
@@ -42,8 +42,6 @@ test('email confirmation and initial password changes use the documented API con
     newPassword: 'new-password',
     confirmPassword: 'new-password',
   });
-  assert.equal(calls[2][0], 'https://fosa-api.ngrok.dev/api/auth/login');
-  assert.deepEqual(JSON.parse(calls[2][1].body), { userName: 'employee', password: 'new-password' });
   assert.deepEqual(result, loginResult);
 });
 
@@ -51,7 +49,7 @@ test('signed-in password changes use the password endpoint and replace the sessi
   const calls = [];
   const api = createApiClient({ fetchImpl: async (...args) => {
     calls.push(args);
-    if (calls.length === 2) return Response.json({ success: true, data: { token: 'updated-session', userName: 'employee' } });
+    if (calls.length === 1) return Response.json({ success: true, data: { token: 'updated-session', userName: 'employee' } });
     return Response.json({ success: true, data: {} });
   } });
   api.setToken('old-session');
@@ -63,21 +61,18 @@ test('signed-in password changes use the password endpoint and replace the sessi
     ConfirmPassword: 'new-password',
   });
 
-  assert.equal(calls[0][0], '/api/auth/change-initial-password');
+  assert.equal(calls[0][0], '/api/auth/change-password');
   assert.equal(calls[0][1].method, 'POST');
-  assert.equal(calls[0][1].headers.Authorization, undefined);
+  assert.equal(calls[0][1].headers.Authorization, 'Bearer old-session');
   assert.deepEqual(JSON.parse(calls[0][1].body), {
-    userName: 'employee',
     currentPassword: 'old-password',
     newPassword: 'new-password',
     confirmPassword: 'new-password',
   });
-  assert.equal(calls[1][0], '/api/auth/login');
-  assert.equal(calls[1][1].headers.Authorization, undefined);
   assert.deepEqual(result, { token: 'updated-session', userName: 'employee' });
   api.setToken(result.token);
   await api.profile();
-  assert.ok(calls[2][1].headers.Authorization);
+  assert.equal(calls[1][1].headers.Authorization, 'Bearer updated-session');
 });
 
 test('leave preview sends required query fields and includes excludedId only when supplied', async () => {
@@ -170,4 +165,11 @@ test('cancellation remains distinct from a network failure', async () => {
 test('an HTML fallback cannot be mistaken for a successful API response', async () => {
   const api = createApiClient({ fetchImpl: async () => new Response('<html>Portal</html>') });
   await assert.rejects(api.profile(), error => error instanceof ApiError && /unexpected response/.test(error.message));
+});
+
+test('an HTML 404 is classified as an unavailable API route rather than a missing payroll record', async () => {
+  const api = createApiClient({ fetchImpl: async () => new Response('<html>IIS Not Found</html>', { status: 404, headers: { 'Content-Type': 'text/html' } }) });
+  await assert.rejects(api.payslips(), error => error.status === 404 && error.code === 'API_ROUTE_UNAVAILABLE');
+  const recordApi = createApiClient({ fetchImpl: async () => Response.json({ success: false, message: 'Payslip not found.', error: { code: 'RESOURCE_NOT_FOUND' } }, { status: 404 }) });
+  await assert.rejects(recordApi.payslip('foreign'), error => error.status === 404 && error.code === 'RESOURCE_NOT_FOUND');
 });

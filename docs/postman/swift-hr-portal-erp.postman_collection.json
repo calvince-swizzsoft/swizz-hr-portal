@@ -58,6 +58,10 @@
     {
       "key": "pageIndex",
       "value": "0"
+    },
+    {
+      "key": "payslipId",
+      "value": ""
     }
   ],
   "item": [
@@ -274,6 +278,38 @@
             "header": [],
             "url": "{{baseUrl}}/hr-portal/me/leave-applications/{{applicationId}}/withdraw"
           }
+        },
+        {
+          "name": "LIVE – Change signed-in password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"{{newPassword}}\",\n  \"confirmPassword\": \"{{newPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/change-password",
+            "description": "Requires the current bearer session. Changes only the authenticated account; no username/userId target. This changes a real password: run only with explicit authorization. Set password and newPassword as local unshared values. Success supplies a replacement token; existing JWTs remain valid until expiry under current policy."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const data = body && Object.prototype.hasOwnProperty.call(body, 'data') ? body.data : body;",
+                  "pm.test('Password changed and replacement token returned', () => { pm.expect(pm.response.code).to.equal(200); pm.expect(data.token).to.be.a('string').and.not.empty; });",
+                  "if (pm.response.code === 200 && data && data.token) pm.collectionVariables.set('token', data.token);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -344,6 +380,36 @@
             },
             "url": "{{baseUrl}}/hr-portal/processing/leave-applications/{{applicationId}}/recall",
             "description": "POST recall of an APPROVED leave (status 2). effectiveReturnDate (confirmed) is the day the employee returns and must fall within the leave; remarks is unconfirmed. Safe checks: an empty body {} returns 400 \"An effective return date is required.\"; an invalid date returns 400. A valid date really recalls the leave (200, Status 8)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. My payslips (read)",
+      "description": "Employee-owned posted payslips only. Set payslipId from the history response. Foreign or unposted records return 404. Requires the signed-in employee session. No payroll posting or processing operations.",
+      "item": [
+        {
+          "name": "My posted payslips",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/hr-portal/me/payslips?pageIndex={{pageIndex}}&pageSize=20"
+          }
+        },
+        {
+          "name": "My posted payslip details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/hr-portal/me/payslips/{{payslipId}}"
+          }
+        },
+        {
+          "name": "My posted payslip entries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/hr-portal/me/payslips/{{payslipId}}/entries"
           }
         }
       ]

@@ -17,10 +17,13 @@ Preserve PascalCase DTO field names and numeric status values across adapters.
 | `confirmEmail(body)` | `{ UserId, Code }`; sent as `{ userId, code }` | API confirmation result | POST `auth/confirm-email` |
 | `setToken(token)` | Login token | void; Supabase already holds its session | None |
 | `clearToken()` | None | void or promise; callers may await | Local session cleanup |
-| `changePassword(body)` | `{ UserName, CurrentPassword, NewPassword, ConfirmPassword }`; sent as `{ userName, currentPassword, newPassword, confirmPassword }` | Changes the password, then signs in with the new password and returns the login result; unsupported in synthetic mode | POST `auth/change-initial-password`, then `auth/login` |
-| `changeInitialPassword(body)` | Same as `changePassword(body)` | Backward-compatible alias used by the first-login password flow | Same as `changePassword(body)` |
+| `changePassword(body)` | `{ CurrentPassword, NewPassword, ConfirmPassword }`; authenticated user comes from JWT, no username or user ID accepted as the target | `{ token, UserName, roles }`; caller replaces its in-memory session | POST `auth/change-password` |
+| `changeInitialPassword(body)` | `{ UserName, CurrentPassword, NewPassword, ConfirmPassword }`; anonymous first-login flow only | Login result including token | POST `auth/change-initial-password` |
 | `profile(options)` | None | EmployeeProfile | GET `hr-portal/me` |
 | `updateProfile(changes)` | Nonempty object containing CustomerAddressEmail and/or CustomerAddressMobileLine | Saved EmployeeProfile | PUT `hr-portal/me` |
+| `payslips(pageIndex=0, options)` | Zero-based page, fixed pageSize 20; ERP only | PayslipPage (own posted records, newest first) | GET `hr-portal/me/payslips` |
+| `payslip(id, options)` | Own posted payslip ID; ERP only | PortalPayslip | GET `hr-portal/me/payslips/{id}` |
+| `payslipEntries(id, options)` | Own posted payslip ID; ERP only | PortalPayslipEntry[] | GET `hr-portal/me/payslips/{id}/entries` |
 | `leaveTypes(options)` | None | LeaveType[] | GET `hr-portal/me/leave-types` |
 | `applications(pageIndex=0, options)` | Zero-based page, fixed pageSize 20 | ApplicationPage | GET `hr-portal/me/leave-applications` |
 | `application(id, options)` | Own application ID | LeaveApplication | GET `hr-portal/me/leave-applications/{id}` |
@@ -181,7 +184,7 @@ to `TakenDays`. This does not update ERP balances; the ERP adapter rejects this
 development-only operation.
 
 The signed-in **Settings** page changes ERP passwords through the authenticated
-`auth/change-initial-password` operation and re-authenticates to replace the
+`auth/change-password` operation and uses the returned replacement
 in-memory token. The strength indicator is informational; the backend remains
 the password-policy authority. Password changes remain unsupported by the
 Supabase development adapter. Theme and employee preferences are saved locally
@@ -218,5 +221,53 @@ Do not claim live contract verification from offline fixture tests alone.
 The employee UI offers Dashboard, My Profile, Leave Management, Apply for
 Leave, My Leaves and Help & Support. Help & Support provides guidance for
 existing portal workflows. Other employee tools are not currently included.
-Payslip/P9 remain outside the shared client until ownership and ERP contracts
-are defined.
+Payslips are included under the ERP-only ownership contract below. P9 remains
+outside the shared client until its ownership and ERP contract are defined.
+
+### Signed-in password changes
+
+Deploy the backend change-password endpoint before using Settings in ERP mode.
+It requires a bearer token and camelCase `currentPassword`, `newPassword`, and
+`confirmPassword`. It resolves the account from the JWT name-identifier claim,
+verifies the current password, checks confirmation and the configured Identity
+password policy, then saves the hash, security stamp, and password-change date
+atomically without revalidating unrelated legacy profile fields. Missing/invalid
+sessions return 401; input/password-policy failures return 400. An uncertain save
+returns 503 `PASSWORD_CHANGE_OUTCOME_UNKNOWN`; do not retry automatically.
+Success returns `{ success, message, data: { token, UserName, roles } }`. Replace
+the portal's token in memory; no second login request is necessary. Existing JWTs
+remain valid until expiry under the current validation policy: security-stamp
+rotation alone does not revoke them. No live password change was used to verify
+this integration.
+
+### Employee payslips (ERP only)
+
+`canViewPayslips=true` exposes My payslips. The existing ERP
+`PortalPaySlipsController` delegates to `FindOwnPostedPaySlips`,
+`FindOwnPostedPaySlip`, and `FindOwnPostedPaySlipEntries`. Each resolves the
+current employee from the authenticated context and filters ownership and Posted
+status in the service query. No employee ID or salary-card ID is supplied by the
+portal. Unknown, foreign and unposted details/entries return 404; inactive or
+unlinked employees return 403. Missing/expired authentication returns 401.
+
+`PayslipPage`: `PageIndex`, `PageSize`, `TotalCount`, `TotalPages`, `PageCollection`.
+`PortalPayslip`: `Id`, `SalaryPeriodId`, `SalaryPeriodPostingPeriodDescription`,
+`SalaryPeriodMonth`, `SalaryPeriodMonthDescription`, `Status`, `StatusDescription`,
+`NetPay`, `CreatedDate`.
+`PortalPayslipEntry`: `Id`, `PaySlipId`, `Description`, `SalaryHeadType`,
+`SalaryHeadTypeDescription`, `SalaryHeadCategory`, `SalaryHeadCategoryDescription`,
+`Principal`, `Interest`.
+
+The client unwraps the standard `{ success, message, data }` envelope and forwards
+read cancellation. Screens show server amounts and descriptions, without
+recalculating payroll, inventing currency metadata or exposing administrative
+processing/posting actions. List/detail/entries are read-only; PDFs and P9 are not
+implemented. Details must load successfully before entries are requested.
+Malformed list, detail or entry responses are reported rather than rendered as
+empty payroll data. Supabase exposes `canViewPayslips=false`; these operations
+reject locally with 400 and never call Supabase or ERP as a fallback. No SQL
+migration or payroll fixtures are added.
+
+Verification includes local HTTP client tests, rendered screen states, and the
+existing compiled backend ownership tests. It does not establish live deployed
+availability or validate real payroll figures.

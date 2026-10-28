@@ -28,34 +28,18 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     if (!response.ok || data?.success === false) {
       if (response.status === 401 && !anonymous) { token = null; onUnauthorized(); }
       const error = new ApiError(data?.message || data?.Message || 'The request could not be completed.', response.status, data?.correlationId);
-      error.code = data?.error?.code || null;
+      error.code = data?.error?.code || (response.status === 404 && data === null ? 'API_ROUTE_UNAVAILABLE' : null);
       throw error;
     }
     if (data === null) throw new ApiError('The HR service returned an unexpected response. Check the API connection.', response.status);
     return data && Object.hasOwn(data, 'data') ? data.data : data;
-  }
-  async function changePassword({ UserName, CurrentPassword, NewPassword, ConfirmPassword }) {
-    await request('auth/change-initial-password', {
-      method: 'POST',
-      body: {
-        userName: UserName,
-        currentPassword: CurrentPassword,
-        newPassword: NewPassword,
-        confirmPassword: ConfirmPassword,
-      },
-      anonymous: true,
-    });
-    return request('auth/login', {
-      method: 'POST',
-      body: { userName: UserName, password: NewPassword },
-      anonymous: true,
-    });
   }
   return {
     source: 'erp',
     loginLabel: 'Username',
     canEditProfile: true,
     canRecallLeave: true,
+    canViewPayslips: true,
     setToken(value) { token = value; },
     clearToken() { token = null; },
     login: ({ UserName, Password }) => request('auth/login', {
@@ -68,14 +52,24 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
       body: { userId: UserId, code: Code },
       anonymous: true,
     }),
-    changePassword,
-    changeInitialPassword: changePassword,
+    changePassword: ({ CurrentPassword, NewPassword, ConfirmPassword }) => request('auth/change-password', {
+      method: 'POST',
+      body: { currentPassword: CurrentPassword, newPassword: NewPassword, confirmPassword: ConfirmPassword },
+    }),
+    changeInitialPassword: ({ UserName, CurrentPassword, NewPassword, ConfirmPassword }) => request('auth/change-initial-password', {
+      method: 'POST',
+      body: { userName: UserName, currentPassword: CurrentPassword, newPassword: NewPassword, confirmPassword: ConfirmPassword },
+      anonymous: true,
+    }),
     profile: (options) => request('hr-portal/me', options),
     async updateProfile(changes) {
       let body;
       try { body = pickProfileChanges(changes); } catch (error) { throw new ApiError(error.message, 400); }
       return request('hr-portal/me', { method: 'PUT', body });
     },
+    payslips: (pageIndex = 0, options) => request(`hr-portal/me/payslips?pageIndex=${pageIndex}&pageSize=20`, options),
+    payslip: (id, options) => request(`hr-portal/me/payslips/${encodeURIComponent(id)}`, options),
+    payslipEntries: (id, options) => request(`hr-portal/me/payslips/${encodeURIComponent(id)}/entries`, options),
     leaveTypes: (options) => request('hr-portal/me/leave-types', options),
     applications: (pageIndex = 0, options) => request(`hr-portal/me/leave-applications?pageIndex=${pageIndex}&pageSize=20`, options),
     application: (id, options) => request(`hr-portal/me/leave-applications/${encodeURIComponent(id)}`, options),

@@ -41,12 +41,13 @@ VITE_API_BASE_URL=/api
 API_PROXY_TARGET=https://fosa-api.ngrok.dev
 ```
 
-The login screen calls `POST /api/auth/login`; email confirmation calls
-`POST /api/auth/confirm-email`; initial and signed-in password changes call
-`POST /api/auth/change-initial-password`. The browser sends the documented
-camelCase JSON request fields. After a successful password change, the portal
-signs in again with the new password to obtain a fresh session token. Use an
-active employee-linked ERP account.
+The login screen calls `POST /api/auth/login`; initial password changes call
+`POST /api/auth/change-initial-password`. Signed-in password changes use
+`POST /api/auth/change-password` with the current bearer token and no target
+username. Both password flows return a session token directly; there is no
+second login request. Email confirmation is not exposed on the login page;
+account activation is handled through the organization�s account setup process.
+Use an active employee-linked ERP account.
 `API_PROXY_TARGET` is used only by the Vite development server.
 For hosted production, serve API and frontend under one HTTPS origin or configure
 approved CORS origins and an appropriate `VITE_API_BASE_URL` including `/api`.
@@ -69,7 +70,7 @@ not yet confirmed cannot sign in until an ERP administrator confirms them.
 | 1. Auth | Sign in, change initial password | Change password only |
 | 2. My profile | Get my profile | No |
 | 3. My leave | Leave types, applications, one application, balance, preview | No |
-| 4. LIVE CHANGES | Update contact details, submit, edit, withdraw leave | **Yes – live ERP** |
+| 4. LIVE CHANGES | Update contact details, submit/edit/withdraw leave, change signed-in password | **Yes – live ERP** |
 | 5a. Approvals | Pending (22017), approved (22018), one request | No |
 | 5b. LIVE APPROVAL & RECALL | Approve or reject, recall approved leave | **Yes – live ERP** |
 
@@ -102,7 +103,8 @@ only My Leaves displays the employee's request list and statuses. Dashboard shor
 signed-in employee's own profile; the leave application list uses the
 employee-scoped API.
 
-Settings includes an authenticated ERP password change with show/hide controls,
+Settings uses authenticated `POST /api/auth/change-password` (deploy the backend
+endpoint first) for ERP password changes with show/hide controls,
 password-match validation and a non-authoritative strength estimate; the HR
 authentication API applies its own password policy. The portal retains the
 Operational light theme. Account preferences (language, display name
@@ -117,8 +119,20 @@ services, so Settings does not simulate them.
 The dashboard provides quick access to leave requests, My Profile and
 **Help & Support**. Help & Support provides guidance for current portal
 workflows. Other employee tools are not currently included in the portal.
-Payslip/P9 remain outside the shared client until their ownership and ERP
-contracts are defined.
+My payslips uses the employee-owned ERP routes: posted payslip history,
+details and payroll entries under `/api/hr-portal/me/payslips`. The backend scopes
+all three reads to the authenticated employee. The portal preserves list paging
+when opening a payslip and returning, and shows unavailable/denied states without
+substituting employee data. Amounts and payroll entries are displayed as supplied
+by ERP; no payroll calculation is performed in the browser. There are no PDF
+export or P9 workflows yet. P9 remains outside the shared client until its
+ownership and ERP contract are defined.
+
+Payslips are ERP-only (`canViewPayslips=true`). The navigation and dashboard
+shortcut are hidden in Supabase mode; direct payslip URLs explain unavailability.
+No synthetic payroll tables, fixtures or cross-source fallback are provided.
+Deploy the existing `PortalPaySlipsController` and ownership-aware service methods
+before using this screen. Live authenticated integration remains to be verified.
 
 Included: login, ERP initial and signed-in password changes, contact-only profile editing in both
 data sources, eligible leave types, own application list showing leave type,
@@ -161,8 +175,8 @@ updated values; balance history is retained. Settings also allows approvers to
 rename, archive and restore leave types. Archiving prevents new requests while
 preserving existing applications and fixtures. Settings is available to every
 signed-in user for account preferences and password changes; Supabase
-development password changes remain managed in Supabase Auth. Theme is
-browser-persisted; language, display name and accessibility preferences are
+development password changes remain managed in Supabase Auth. The Operational
+light theme is retained; language, display name and accessibility preferences are
 saved per sign-in name on the current device. The balances screen initially selects today's date; if no fixture
 exists for it, choose the fixture's as-at date or ask an approver to set one up
 from **Leave types**. This does not affect ERP data.
@@ -221,7 +235,7 @@ approved) and self-approval are enforced by the ERP or the leave-workflow
 migration, and users without permission see a denial with no records. In
 Supabase mode, apply `supabase/migrations/20261019000000_leave_workflow.sql` and
 grant permissions as in the [workflow guide](docs/LEAVE_WORKFLOW_GUIDE.md).
-Payroll/P9/requisitions screens are not implemented. The source models are aligned to the local ERP
+Employee payslip history and detail screens are implemented for ERP. P9 and requisitions screens are not implemented. The source models are aligned to the local ERP
 controller/DTO definitions, but live authenticated integration must still be
 verified before rollout.
 
@@ -245,3 +259,15 @@ Follow the reactfosa Operational design language in
 indigo navigation/title bars/actions, white page cards, gray list wrappers,
 consistent status colors, system typography and centered pagination. Details
 are in [AGENTS.md](AGENTS.md).
+
+### Payslip API deployment troubleshooting
+
+An IIS HTML 404 for `/api/hr-portal/me/payslips` indicates the configured service
+is not serving the portal payslip routes; it is not evidence that an employee has
+no payslips. Deploy the backend containing `PortalPaySlipsController` and the
+matching `PaySlipAppService`/`IPaySlipAppService` assemblies to the ERP instance
+behind `API_PROXY_TARGET`. The list should return an authentication error when
+called anonymously, then a page (possibly empty) for an authorized employee.
+The portal distinguishes an unavailable route from a JSON `RESOURCE_NOT_FOUND`
+response for a foreign, unposted or missing individual payslip. It never falls
+back to administrative payroll APIs or bypasses employee ownership.

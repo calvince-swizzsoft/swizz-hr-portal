@@ -3,6 +3,8 @@ import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams, 
 import { createPortalClient } from './lib/portalClient.js';
 import { uniqueLeaveTypes } from './lib/leaveTypes.js';
 import packageInfo from '../package.json';
+import { Feedback, Field, Card, useLoad, LoadState, useRefreshOnFocus } from './components/PortalUi.jsx';
+import { Payslips, PayslipDetail } from './components/Payslips.jsx';
 
 const DEFAULT_PREFERENCES = { language: 'en', displayName: '', textSize: 'medium', highContrast: false, reduceMotion: false };
 const preferenceKey = userName => `swizz-hr-portal-preferences:${encodeURIComponent(String(userName || 'guest').trim().toLowerCase())}`;
@@ -26,20 +28,6 @@ const dateText = value => {
 };
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const nextDate = value => { const [year, month, day] = value.split('-').map(Number); const date = new Date(Date.UTC(year, month - 1, day + 1)); return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`; };
-function Feedback({ error }) { return error ? <div className="feedback" role="alert">{error.message || error}{error.correlationId && <small>Reference: {error.correlationId}</small>}</div> : null; }
-function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label>; }
-function Card({ title, children, action }) { return <section className="page-card"><header className="card-header"><h1>{title}</h1>{action}</header>{children}</section>; }
-function useLoad(load, dependencies) {
-  const [data, setData] = useState(null); const [error, setError] = useState(null); const [loading, setLoading] = useState(true); const [revision, setRevision] = useState(0);
-  const [loadedFor, setLoadedFor] = useState(null);
-  useEffect(() => {
-    const abort = new AbortController(); setLoading(true); setData(null); setError(null);
-    Promise.resolve().then(() => load(abort.signal)).then(value => { if (!abort.signal.aborted) setData(value); }).catch(e => { if (!abort.signal.aborted) setError(e); }).finally(() => { if (!abort.signal.aborted) { setLoadedFor([...dependencies, revision]); setLoading(false); } });
-    return () => abort.abort();
-  }, [...dependencies, revision]);
-  const current = loadedFor?.length === dependencies.length + 1 && [...dependencies, revision].every((value, index) => Object.is(value, loadedFor[index]));
-  return { data: current ? data : null, error: current ? error : null, loading: loading || !current, retry: () => setRevision(x => x + 1) };
-}
 // Shows a message instead of a blank page when a screen fails to render; the sidebar stays usable.
 class ScreenErrorBoundary extends Component {
   state = { error: null };
@@ -49,30 +37,9 @@ class ScreenErrorBoundary extends Component {
     return <Card title="Something went wrong"><div className="feedback" role="alert">This page could not be displayed. Try again, or contact support with the details below.<small>{String(this.state.error?.message || this.state.error)}</small></div><button onClick={() => { this.setState({ error: null }); this.props.onHome(); }}>{this.props.homeLabel || 'Back to my profile'}</button></Card>;
   }
 }
-function LoadState({ state }) {
-  return state.loading ? <div className="empty" role="status">Loading...</div> : state.error ? <><Feedback error={state.error} /><button onClick={state.retry}>Try again</button></> : null;
-}
 function ApprovalRedirect() {
   const { id } = useParams();
   return <Navigate to={`/processing/leave-applications/${encodeURIComponent(id)}`} replace />;
-}
-function useRefreshOnFocus(refresh) {
-  const refreshRef = useRef(refresh);
-  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
-  useEffect(() => {
-    let lastRefresh = 0;
-    function refreshVisiblePage() {
-      if (document.visibilityState === 'hidden' || Date.now() - lastRefresh < 750) return;
-      lastRefresh = Date.now();
-      refreshRef.current();
-    }
-    window.addEventListener('focus', refreshVisiblePage);
-    document.addEventListener('visibilitychange', refreshVisiblePage);
-    return () => {
-      window.removeEventListener('focus', refreshVisiblePage);
-      document.removeEventListener('visibilitychange', refreshVisiblePage);
-    };
-  }, []);
 }
 export default function App() {
   const [profile, setProfile] = useState(null); const [userName, setUserName] = useState(''); const [isApprover, setIsApprover] = useState(false); const [notice, setNotice] = useState('');
@@ -106,14 +73,16 @@ export default function App() {
     <nav><NavLink to="/dashboard">Dashboard</NavLink><NavLink to="/profile">My Profile</NavLink></nav>
     <p className="nav-label">LEAVE MANAGEMENT</p><nav><NavLink to="/leave/apply">Apply for Leave</NavLink><NavLink to="/leave/applications">My Leaves</NavLink><NavLink to="/leave-types">Leave types</NavLink><NavLink to="/balances">Leave balances</NavLink><NavLink to="/remaining">Remaining</NavLink></nav>
     {isApprover && <><p className="nav-label">LEAVE PROCESSING</p><nav><NavLink to="/processing/leave-applications">Team leave applications</NavLink></nav></>}
+    {api.canViewPayslips && <><p className="nav-label">PAYROLL</p><nav><NavLink to="/payslips">My payslips</NavLink></nav></>}
     <p className="nav-label">ACCOUNT</p><nav><NavLink to="/settings">Settings</NavLink><NavLink to="/help">Help &amp; Support</NavLink></nav>
     <div className="sidebar-bottom"><span>{preferences.displayName || profile.CustomerFullName}</span><button onClick={logout}>Sign out</button></div></aside>
     <main><div className="topbar"><span>Welcome, {preferences.displayName || profile.CustomerIndividualFirstName || 'colleague'}</span><span className="status-dot">{isApprover ? 'Leave approver' : 'Employee portal'}</span></div><ScreenErrorBoundary key={pathname} onHome={() => navigate(home)} homeLabel="Back to dashboard"><Routes>
-      <Route path="/dashboard" element={<Dashboard profile={profile} preferences={preferences} />} />
+      <Route path="/dashboard" element={<Dashboard api={api} profile={profile} preferences={preferences} />} />
       <Route path="/profile" element={<Profile api={api} profile={profile} onUpdated={setProfile} />} />
       <Route path="/leave/apply" element={<Leave api={api} startWithForm />} />
       <Route path="/leave/applications" element={<Leave api={api} />} />
       <Route path="/leave" element={<Navigate to="/leave/applications" replace />} />
+      <Route path="/payslips" element={<Payslips api={api} />} /><Route path="/payslips/:id" element={<PayslipDetail api={api} />} />
       <Route path="/help" element={<HelpSupport api={api} />} />
       <Route path="/leave-types" element={<LeaveTypes api={api} isApprover={isApprover} />} />
       <Route path="/leave-type" element={<LeaveTypes api={api} isApprover={isApprover} />} />
@@ -124,22 +93,16 @@ export default function App() {
       <Route path="/balances" element={<Balances api={api} />} />
       <Route path="/remaining" element={<Remaining api={api} />} />
       <Route path="/applications" element={<Navigate to="/leave/applications" replace />} />
-      <Route path="/settings" element={<Settings api={api} userName={userName} profile={profile} preferences={preferences} onPreferencesChange={next => { localStorage.setItem(preferenceKey(userName), JSON.stringify(next)); setPreferences(next); }} isApprover={isApprover} onPasswordChanged={result => { api.setToken(result.token); setUserName(result.userName || userName); }} />} />
+      <Route path="/settings" element={<Settings api={api} userName={userName} profile={profile} preferences={preferences} onPreferencesChange={next => { localStorage.setItem(preferenceKey(userName), JSON.stringify(next)); setPreferences(next); }} isApprover={isApprover} onPasswordChanged={result => { api.setToken(result.token); setUserName(result.UserName || result.userName || userName); }} />} />
       <Route path="/processing/leave-applications" element={<Approvals api={api} profile={profile} />} /><Route path="/processing/leave-applications/:id" element={<ApprovalReview api={api} profile={profile} />} /><Route path="*" element={<Navigate to={home} replace />} />
     </Routes></ScreenErrorBoundary></main></div>;
 }
 function Login({ api, signedIn, notice }) {
   const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [newPassword, setNewPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('');
-  const [userId, setUserId] = useState(''); const [code, setCode] = useState(''); const [confirmingEmail, setConfirmingEmail] = useState(false);
-  const [initial, setInitial] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(null); const [success, setSuccess] = useState('');
+  const [initial, setInitial] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(null);
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError(null);
     try {
-      if (confirmingEmail) {
-        await api.confirmEmail({ UserId: userId, Code: code });
-        setConfirmingEmail(false); setCode(''); setSuccess('Email confirmed. Sign in to continue.');
-        return;
-      }
       const result = initial
         ? await api.changeInitialPassword({ UserName: username, CurrentPassword: password, NewPassword: newPassword, ConfirmPassword: confirmPassword })
         : await api.login({ UserName: username, Password: password });
@@ -148,19 +111,12 @@ function Login({ api, signedIn, notice }) {
     }
     catch (e) { setError(e); } finally { setBusy(false); }
   }
-  return <div className="login-shell"><div className="login-intro"><div className="brand"><span className="brand-icon">S</span>Swift HR Portal</div><div><h1>Swift HR Portal</h1><p>Keep up with your employee details and plan your time away.</p></div><small>Swift Financials</small></div><div className="login-panel"><form onSubmit={submit}><h2>{confirmingEmail ? 'Confirm your email' : initial ? 'Choose your password' : 'Welcome back'}</h2>{notice && <p role="status">{notice}</p>}{success && <p className="success" role="status">{success}</p>}<Feedback error={error} />
-    {confirmingEmail ? <>
-      <Field label="User ID"><input required autoComplete="off" value={userId} onChange={e => setUserId(e.target.value)} disabled={busy} /></Field>
-      <Field label="Confirmation code"><input required autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} disabled={busy} /></Field>
-      <button className="primary full" disabled={busy}>{busy ? 'Confirming...' : 'Confirm email'}</button>
-      <button type="button" onClick={() => { setConfirmingEmail(false); setError(null); setSuccess(''); }} disabled={busy}>Back to sign in</button>
-    </> : <>
+  return <div className="login-shell"><div className="login-intro"><div className="brand"><span className="brand-icon">S</span>Swift HR Portal</div><div><h1>Swift HR Portal</h1><p>Keep up with your employee details and plan your time away.</p></div><small>Swift Financials</small></div><div className="login-panel"><form onSubmit={submit}><h2>{initial ? 'Choose your password' : 'Welcome back'}</h2>{notice && <p role="status">{notice}</p>}<Feedback error={error} />
       <Field label={api.loginLabel}><input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} disabled={busy || initial} /></Field><Field label={initial ? 'Temporary password' : 'Password'}><input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></Field>
       {initial && <><Field label="New password"><input required type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} disabled={busy} /></Field><Field label="Confirm new password"><input required type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} disabled={busy} /></Field></>}
       <button className="primary full" disabled={busy}>{busy ? 'Signing in...' : initial ? 'Change password and sign in' : 'Sign in'}</button>
-      {!initial && api.source === 'erp' && <button type="button" onClick={() => { setConfirmingEmail(true); setError(null); setSuccess(''); }} disabled={busy}>Confirm email</button>}
       <p className="help">Need an account? Contact your HR administrator.</p>
-    </>}</form></div></div>;
+    </form></div></div>;
 }
 function Profile({ api, profile, onUpdated }) {
   const [editing, setEditing] = useState(false); const [success, setSuccess] = useState('');
@@ -169,11 +125,12 @@ function Profile({ api, profile, onUpdated }) {
   if (editing) return <Card title="Edit my details">{heading}<ProfileForm api={api} profile={profile} onClose={() => setEditing(false)} onSaved={saved => { onUpdated(saved); setEditing(false); setSuccess('Your details were updated.'); }} /></Card>;
   return <Card title="My employee profile" action={api.canEditProfile && <button onClick={() => { setSuccess(''); setEditing(true); }}>Edit my details</button>}>{success && <p className="success" role="status">{success}</p>}{heading}<dl className="details-grid">{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '\u2014'}</dd></div>)}</dl><p className="help">{api.canEditProfile ? 'You can update your email and mobile. To change other details, contact HR.' : 'To correct your employee details, contact HR.'}</p></Card>;
 }
-function Dashboard({ profile, preferences }) {
+function Dashboard({ api, profile, preferences }) {
   const links = [
     { title: 'Apply for Leave', description: 'Start a leave request and review its details before submitting.', to: '/leave/apply', action: 'Start a request' },
     { title: 'My Leaves', description: 'Check the status and history of your leave requests.', to: '/leave/applications', action: 'View my leaves' },
     { title: 'My Profile', description: 'Review your employee information and contact details.', to: '/profile', action: 'View profile' },
+    ...(api?.canViewPayslips ? [{ title: 'My payslips', description: 'View your posted payslips and payroll entries.', to: '/payslips', action: 'View payslips' }] : []),
     { title: 'Help & Support', description: 'Find guidance for common employee portal tasks.', to: '/help', action: 'Get help' },
   ];
   return <Card title="Dashboard">
@@ -195,6 +152,7 @@ function HelpSupport({ api }) {
     ['Correct employee information', 'Open Settings to review your account information. For official details that cannot be edited in My Profile, contact HR through your organization’s established support process.'],
     ['Apply for leave', 'Open Apply for Leave, choose an eligible leave type, enter dates and a reason, then review the available preview before submitting. Handover details and file uploads are not connected.'],
     ['Check a leave request', 'Open My Leaves to see your own requests and their latest statuses. Pending requests can be edited or withdrawn. Refresh the list if a request was recently processed.'],
+    ['View payslips', api.canViewPayslips ? 'Open My payslips to view your posted payroll periods, net pay and entries. If a payslip is missing, contact HR. PDF downloads and P9 forms are not connected.' : 'Payslips are available through the ERP only. They are not simulated in development mode.'],
     ['Report an API error', 'Try again after checking your connection. If the error includes a reference ID, share that ID with your HR or support team; do not share your password or session token.'],
   ];
   return <Card title="Help & Support"><p className="muted section-intro">Guidance for common tasks in the employee portal.</p><dl className="details-grid">{topics.map(([title, description]) => <div key={title}><dt>{title}</dt><dd>{description}</dd></div>)}</dl><p className="help">For account-specific or urgent assistance, use your organization's established HR support channel. Contact details are not configured in this portal.</p></Card>;
@@ -207,7 +165,7 @@ function PasswordField({ label, autoComplete, value, onChange, disabled }) {
     <div className="password-input"><input id={id} required type={visible ? 'text' : 'password'} autoComplete={autoComplete} value={value} onChange={onChange} disabled={disabled} /><button type="button" aria-controls={id} aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`} onClick={() => setVisible(state => !state)} disabled={disabled}>{visible ? 'Hide' : 'Show'}</button></div>
   </div>;
 }
-function PasswordChange({ api, userName, onChanged }) {
+function PasswordChange({ api, onChanged }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -228,7 +186,7 @@ function PasswordChange({ api, userName, onChanged }) {
     if (newPassword !== confirmPassword) { setError(new Error('The new passwords do not match.')); return; }
     setBusy(true); setError(null); setSuccess('');
     try {
-      const result = await api.changePassword({ UserName: userName, CurrentPassword: currentPassword, NewPassword: newPassword, ConfirmPassword: confirmPassword });
+      const result = await api.changePassword({ CurrentPassword: currentPassword, NewPassword: newPassword, ConfirmPassword: confirmPassword });
       if (!result?.token) throw new Error('Your password was changed, but the HR service did not return a new session. Sign in again.');
       onChanged(result);
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
@@ -253,8 +211,7 @@ function PasswordChange({ api, userName, onChanged }) {
         {mismatch && <p className="field-error" role="alert">The new passwords do not match.</p>}
         <Feedback error={error} />
         {success && <p className="success" role="status">{success}</p>}
-        <button className="primary" disabled={busy || !userName || !currentPassword || !newPassword || !confirmPassword || mismatch}>{busy ? 'Changing password...' : 'Change password'}</button>
-        {!userName && <p className="help" role="alert">Your sign-in name is unavailable. Sign out and sign in again before changing your password.</p>}
+        <button className="primary" disabled={busy || !currentPassword || !newPassword || !confirmPassword || mismatch}>{busy ? 'Changing password...' : 'Change password'}</button>
       </>}
   </form>;
 }
@@ -334,7 +291,7 @@ function LeaveTypes({ api, isApprover }) {
     {state.data && <div className="list-wrapper">{state.data.length ? state.data.map(type => <div className="list-row type-row" key={type.Id}><strong>{type.Description}</strong><span>{type.Entitlement == null ? 'Balance setup required' : `${type.Entitlement} ${type.UnitTypeDescription || ''}`}</span><div className="row-actions">{canManage && <button onClick={() => { setSelectedType(type.Id); setError(null); setSuccess(''); }}>Set up balance</button>}<button onClick={() => navigate(`/balances?leaveTypeId=${encodeURIComponent(type.Id)}`)}>View balance</button></div></div>) : <div className="empty">No leave types available.</div>}</div>}
   </Card>;
 }
-function Settings({ api, userName, profile, preferences, onPreferencesChange, isApprover, onPasswordChanged }) {
+export function Settings({ api, userName, profile, preferences, onPreferencesChange, isApprover, onPasswordChanged }) {
   const [description, setDescription] = useState('');
   const [editingType, setEditingType] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -437,7 +394,7 @@ function Settings({ api, userName, profile, preferences, onPreferencesChange, is
   }
   return <Card title="Settings"><p className="muted section-intro">Manage your password, account details and personal portal preferences.</p>
     <Feedback error={error} />{success && <p className="success" role="status">{success}</p>}
-    <PasswordChange api={api} userName={userName} onChanged={onPasswordChanged} />
+    <PasswordChange api={api} onChanged={onPasswordChanged} />
     <form className="request-form" onSubmit={savePreferences}>
       <div className="form-heading"><h2>Account preferences</h2></div>
       <p className="muted section-intro">These preferences are saved in this browser for this sign-in name; they are not synchronized across devices.</p>

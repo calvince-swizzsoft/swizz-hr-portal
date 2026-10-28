@@ -69,6 +69,7 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
     canEditProfile: true,
     // The development RPC has no recall operation; screens hide recall when false.
     canRecallLeave: false,
+    canViewPayslips: false,
     async login(body) {
       const { data, error } = await getClient().auth.signInWithPassword({ email: body.UserName ?? body.userName, password: body.Password ?? body.password });
       if (error) fail('Sign-in failed. Check your development account credentials.', error.status || 401, error.code);
@@ -91,6 +92,9 @@ export function createSupabasePortalClient({ supabase: injected, supabaseUrl, su
       try { body = pickProfileChanges(changes); } catch (error) { throw new ApiError(error.message, 400); }
       return rpc('portal_dev_update_profile', { changes: body });
     },
+    async payslips() { throw new ApiError('Payslips are available only through the ERP API.', 400); },
+    async payslip() { throw new ApiError('Payslips are available only through the ERP API.', 400); },
+    async payslipEntries() { throw new ApiError('Payslips are available only through the ERP API.', 400); },
     leaveTypes: (options) => request('leaveTypes', {}, options),
     applications: (pageIndex = 0, options) => request('applications', { pageIndex, pageSize: 20 }, options),
     application: (id, options) => request('application', { id }, options),

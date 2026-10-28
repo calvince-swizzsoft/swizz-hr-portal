@@ -120,3 +120,22 @@
   .password-strength ul { grid-template-columns: minmax(0, 1fr); }
   .settings-grid .field { margin-bottom: 12px; }
 }
+
+.payslip-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) auto; }
+.payslip-entry-grid { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); }
+.payslip-grid, .payslip-entry-grid { overflow-wrap: anywhere; }
+.list-row.payslip-grid, .list-row.payslip-entry-grid { box-shadow: 0 4px 8px #11182714; transition: box-shadow .15s; }
+.list-row.payslip-grid:hover, .list-row.payslip-entry-grid:hover { box-shadow: 0 8px 16px #11182720; }
+.payslip-posted { background: #dcfce7; color: #166534; }
+.payslip-grid .payslip-cell-label, .payslip-entry-grid .payslip-cell-label { display: none; }
+.payslip-skeleton-bar { display: block; height: 16px; background: #e5e7eb; border-radius: 4px; }
+.payslip-skeleton { animation: payslip-pulse 1.4s ease-in-out infinite; }
+@keyframes payslip-pulse { 50% { opacity: .5; } }
+@media (max-width: 900px) {
+  .list-row.payslip-grid, .list-row.payslip-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .payslip-grid .payslip-cell-label, .payslip-entry-grid .payslip-cell-label { display: block; margin: 0 0 4px; }
+}
+@media (max-width: 600px) {
+  .list-row.payslip-grid, .list-row.payslip-entry-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .payslip-skeleton { animation: none; } }
